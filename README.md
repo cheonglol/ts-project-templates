@@ -1,6 +1,3 @@
-Certainly! Here’s a more in-depth README draft for your repository, based on its actual folder structure, architecture documentation, code samples, and project conventions:
-
----
 
 # ts-fastify-backend-template
 
@@ -120,7 +117,3 @@ Healthcheck endpoints are provided out-of-the-box, and a Cron job service is ava
 ---
 
 For more details, browse the [source code](https://github.com/cheonglol/ts-fastify-backend-template) and see the [architecture docs](https://github.com/cheonglol/ts-fastify-backend-template/blob/main/docs/backend-architecture.md).
-
----
-
-Let me know if you want this README even further customized or if you need automatic file creation!
