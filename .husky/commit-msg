@@ -1,0 +1,12 @@
+#!/usr/bin/env sh
+. "$(dirname -- "$0")/_/husky.sh"
+
+echo "Running compilation check..."
+npm run build --silent
+if [ $? -ne 0 ]; then
+  echo "❌ Compilation failed. Commit aborted."
+  exit 1
+fi
+
+echo "Running commitlint..."
+npx --no-install commitlint --edit "$1"

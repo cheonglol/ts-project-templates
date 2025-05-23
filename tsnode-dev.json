@@ -1,0 +1,9 @@
+{
+  "transpileOnly": true,
+  "respawn": true,
+  "ignore": ["node_modules"],
+  "ignoreWatch": ["node_modules"],
+  "execMap": {
+    "ts": "node --inspect=9229"
+  }
+}

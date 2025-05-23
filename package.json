@@ -1,0 +1,54 @@
+{
+  "name": "ts-fastify-backend-template",
+  "version": "1.0.0",
+  "description": "",
+  "homepage": "https://github.com/cheonglol/ts-fastify-backend-template#readme",
+  "bugs": {
+    "url": "https://github.com/cheonglol/ts-fastify-backend-template/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cheonglol/ts-fastify-backend-template.git"
+  },
+  "license": "ISC",
+  "author": "",
+  "type": "commonjs",
+  "main": "dist/index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "prepare": "husky install",
+    "build": "tsc",
+    "start": "ts-node -r tsconfig-paths/register src/index.ts",
+    "dev": "nodemon --exec ts-node -r tsconfig-paths/register src/index.ts",
+    "updates": "ncu -u"
+  },
+  "dependencies": {
+    "@fastify/middie": "^9.0.3",
+    "@types/dotenv": "^8.2.3",
+    "axios": "^1.9.0",
+    "dotenv": "^16.5.0",
+    "fastify": "^5.3.3",
+    "husky": "^9.1.7",
+    "node-cron": "^4.0.7",
+    "reflect-metadata": "^0.2.2"
+  },
+  "devDependencies": {
+    "@commitlint/cli": "^19.8.1",
+    "@commitlint/config-conventional": "^19.8.1",
+    "@types/node": "^22.15.21",
+    "@types/reflect-metadata": "^0.1.0",
+    "@types/uuid": "^10.0.0",
+    "@typescript-eslint/eslint-plugin": "^8.32.1",
+    "@typescript-eslint/parser": "^8.32.1",
+    "eslint": "^9.27.0",
+    "eslint-config-prettier": "^10.1.5",
+    "lint-staged": "^16.0.0",
+    "nodemon": "^3.1.10",
+    "prettier": "^3.5.3",
+    "ts-node": "^10.9.2",
+    "ts-node-dev": "^2.0.0",
+    "tsconfig-paths": "^4.2.0",
+    "typescript": "^5.8.3",
+    "typescript-eslint": "^8.32.1"
+  }
+}
