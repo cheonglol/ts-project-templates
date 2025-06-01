@@ -1,10 +1,7 @@
-import { Controller, Get } from "../decorators/route.decorators";
 import { FastifyRequest, FastifyReply } from "fastify";
 import { Response } from "../common/class/response.class";
 
-@Controller("/healthcheck")
 export class HealthCheckController {
-  @Get("/")
   async checkHealth(_request: FastifyRequest, _reply: FastifyReply) {
     return Response.createSuccessResponse("Service is healthy", {
       status: "UP",
@@ -12,7 +9,6 @@ export class HealthCheckController {
     });
   }
 
-  @Get("/detailed")
   async getDetailedHealth(_request: FastifyRequest, _reply: FastifyReply) {
     // Collect system metrics
     const memoryUsage = process.memoryUsage();
