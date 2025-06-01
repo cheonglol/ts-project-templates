@@ -53,12 +53,18 @@ Refer to [`docs/backend-architecture.md`](https://github.com/cheonglol/ts-fastif
 2. **Environment Setup**
    - Copy `.env.example` to `.env` and adjust settings as needed.
 
-3. **Development**
+3. **Setup Husky (First Time)**
+   ```bash
+   npm run prepare
+   ```
+   This will set up Git hooks for code quality checks.
+
+4. **Development**
    ```bash
    npm run dev
    ```
 
-4. **Build & Run**
+5. **Build & Run**
    ```bash
    npm run build
    npm start
