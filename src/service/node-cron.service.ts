@@ -87,6 +87,4 @@ class CronJobService {
 /**
  * Singleton instance of CronJobService for use throughout the app.
  */
-const CronJobServiceInstance = CronJobService.getInstance();
-
-export { CronJobServiceInstance };
+export const initializeNodeCronService = () => CronJobService.getInstance();

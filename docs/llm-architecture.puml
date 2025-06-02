@@ -1,0 +1,157 @@
+@startuml
+' JustifyPrint Chatbot Service - LLM Architecture (synced to codebase as of 2025-06-01)
+skinparam linetype ortho
+left to right direction
+
+' API Layer: HTTP endpoints, validation, and error handling
+package "API Layer" {
+  class WebhookController <<Controller>> {
+    +handleWebhook(req, res): Promise<void>
+  }
+  class HealthcheckController <<Controller>> {
+    +getHealth(req, res): Promise<void>
+  }
+}
+
+' Application Layer: Orchestrates LLM operations, provider selection, queue, and business logic
+package "Application Layer" {
+  class LLMService <<Singleton Service>> {
+    +generateText(request: iLLMRequest): Promise<iLLMResponse>
+    +chat(request: iLLMChatRequest): Promise<iLLMResponse>
+    +getQueueStatus(): { queueLength: number, activeRequests: number, maxConcurrentRequests: number }
+    +setMaxConcurrentRequests(max: number): void
+    +getAvailableModels(): string[]
+    +setDefaultModel(modelName: string): void
+    +addModel(modelName: string, provider: iLLMProvider): void
+    +addGeminiModel(modelName: string, systemInstruction?: string, generationConfig?): void
+    -providers: Map<string, iLLMProvider>
+    -defaultProvider: iLLMProvider
+    -requestQueue: QueuedRequest[]
+    -activeRequests: number
+    -isProcessingQueue: boolean
+    -maxConcurrentRequests: number
+    -chatHistoryRepo: IChatHistoryRepository
+    #processQueue(): Promise<void>
+    #enqueueRequest(request): Promise<iLLMResponse>
+    #getProvider(modelName?: string): iLLMProvider
+  }
+  note right of LLMService
+    Central entry point for all LLM operations
+    Handles queuing, concurrency, provider selection
+    Persists chat history via repository
+    All API input validated before reaching this layer
+  end note
+}
+
+' Provider Layer: Implements LLM API logic, context management, and model variants
+package "Provider Layer" {
+  interface iLLMProvider {
+    +generateText(request: iLLMRequest): Promise<iLLMResponse>
+    +chat(request: iLLMChatRequest): Promise<iLLMResponse>
+  }
+
+  class GeminiProvider <<Provider>> implements iLLMProvider {
+    +generateText(request: iLLMRequest): Promise<iLLMResponse>
+    +chat(request: iLLMChatRequest): Promise<iLLMResponse>
+    -activeSessions: Map<string, ChatSession>
+    -chatManager: GeminiChatManager
+    -apiKey: string
+    -modelName: string
+    -genAI: GoogleGenerativeAI
+    -MAX_TOKEN_LIMIT: number
+    +createImageContent(prompt: string, imagePath: string): Promise<any[]>
+    +cleanupInactiveSessions(maxAgeMinutes?: number): void
+    +updateSessionTimestamp(sessionId: string): void
+  }
+
+  class GeminiChatManager <<Context Manager>> {
+    +simplifyHistoryForGemini(history: BaseChatMessage[]): any[]
+    +trimHistory(history: GeminiChatMessage[], newMessage: GeminiChatMessage): Promise<GeminiChatMessage[]>
+    +createChatSession(sessionId: string, history?: BaseChatMessage[], generationConfig?): GeminiChatSession
+    +getChatSession(sessionId: string): GeminiChatSession | undefined
+    -apiKey: string
+    -modelName: string
+    -tokenLimit: number
+  }
+}
+
+' Repository Layer: Chat history persistence (provider-agnostic)
+package "Repository Layer" {
+  interface IChatHistoryRepository {
+    +saveHistory(record: ChatHistoryRecord): Promise<void>
+    +getHistory(sessionId: string): Promise<ChatHistoryRecord | null>
+    +updateHistory(sessionId: string, history: BaseChatMessage[]): Promise<void>
+    +deleteHistory(sessionId: string): Promise<void>
+    +listSessions(): Promise<ChatHistoryRecord[]>
+  }
+  note right of IChatHistoryRepository
+    Interface abstracts chat history persistence for all providers.
+    Enables swapping in-memory, SQL, NoSQL, or cloud DBs without changing business logic.
+    Promotes testability, separation of concerns, and future extensibility.
+  end note
+  class InMemoryChatHistoryRepository implements IChatHistoryRepository {
+    -store: Map<string, ChatHistoryRecord>
+    +saveHistory(record: ChatHistoryRecord): Promise<void>
+    +getHistory(sessionId: string): Promise<ChatHistoryRecord | null>
+    +updateHistory(sessionId: string, history: BaseChatMessage[]): Promise<void>
+    +deleteHistory(sessionId: string): Promise<void>
+    +listSessions(): Promise<ChatHistoryRecord[]>
+  }
+}
+
+' Data Types
+interface iLLMRequest {
+  prompt: string
+  maxTokens?: number
+  temperature?: number
+  topP?: number
+  model?: string
+  options?: Record<string, unknown>
+}
+
+interface iLLMChatRequest {
+  sessionId: string
+  message: string
+  history?: BaseChatMessage[] | GeminiChatMessage[]
+  maxTokens?: number
+  temperature?: number
+  topP?: number
+  model?: string
+  options?: Record<string, unknown>
+}
+
+interface iLLMResponse {
+  text: string
+  tokenCount?: number
+  finishReason?: string
+}
+
+interface ChatSession {
+  chat: any
+  lastUpdated: Date
+  modelName: string
+  history?: BaseChatMessage[]
+}
+
+interface ChatHistoryRecord {
+  sessionId: string
+  provider: string
+  model: string
+  history: BaseChatMessage[]
+  createdAt: Date
+  updatedAt: Date
+}
+
+' Relationships (with explicit layout hints)
+WebhookController --> LLMService : invokes
+HealthcheckController --> LLMService : invokes
+
+LLMService --> iLLMProvider : uses
+LLMService --> GeminiProvider : default
+LLMService --> IChatHistoryRepository : persists chat history
+
+GeminiProvider ..> GeminiChatManager : uses for context/history
+GeminiProvider --> IChatHistoryRepository : persists history
+IChatHistoryRepository <|.. InMemoryChatHistoryRepository
+
+@enduml

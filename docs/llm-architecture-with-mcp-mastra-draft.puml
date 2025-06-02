@@ -1,0 +1,307 @@
+@startuml
+' LLM Architecture v2: justifyprint-chatbot-server with Mastra MCP integration and advanced orchestration
+' Expanded with detailed implementation notes for educational, production-level guidance
+skinparam linetype ortho
+
+' API Layer: HTTP endpoints, validation, and error handling
+package "API Layer" {
+  class WebhookController <<Controller>>
+  class HealthcheckController <<Controller>>
+  class AgentController <<Controller>>
+  class WorkflowController <<Controller>>
+  class ToolController <<Controller>>
+  note right of WebhookController
+    - Handles incoming chat/completion requests
+    - Validates payloads, handles errors, and delegates to LLMService
+    - Should be stateless and thin
+  end note
+  note right of AgentController
+    - Exposes endpoints to trigger agent runs
+    - Accepts agent name and input, returns agent output
+    - Useful for agent-driven workflows and debugging
+  end note
+  note right of ToolController
+    - Exposes endpoints to trigger tool execution (local or MCP)
+    - Accepts tool name and input, returns tool output
+    - Useful for testing tools in isolation
+  end note
+}
+
+' Application Layer: Orchestrates LLM operations, workflows, agents, provider selection, and business logic
+package "Application Layer" {
+  class LLMService <<Singleton Service>> {
+    +generateText(request: iLLMRequest): Promise<iLLMResponse>
+    +getQueueStatus()
+    +setMaxConcurrentRequests(max: number)
+    +runAgent(agentName: string, input: any): Promise<any>
+    +runWorkflow(workflowName: string, input: any): Promise<any>
+    +runTool(toolName: string, input: any): Promise<any>
+    -providers: Map<string, iLLMProvider>
+    -requestQueue: QueuedRequest[]
+    -activeRequests: number
+    -toolRegistry: ToolRegistry
+    -mcpOrchestrator: MastraOrchestrator
+  }
+  note right of LLMService
+    - Central entry point for all LLM, agent, workflow, and tool operations
+    - Decides whether to use local or MCP (remote) execution
+    - Handles queuing, concurrency, and provider selection
+    - Should be stateless except for queue/metrics
+    - All API input is validated before reaching this layer
+  end note
+  class AgentManager <<Agent Orchestrator>> {
+    +registerAgent(agent: MastraAgent)
+    +runAgent(agentName: string, input: any): Promise<any>
+    -agents: Map<string, MastraAgent>
+  }
+  note right of AgentManager
+    - Manages agent registration and lookup
+    - Can run agents locally or delegate to MCP
+    - Useful for agent lifecycle management
+  end note
+  class WorkflowManager <<Workflow Orchestrator>> {
+    +registerWorkflow(workflow: MastraWorkflow)
+    +startWorkflow(name: string, input: any): Promise<any>
+    +getWorkflowStatus(id: string): Promise<any>
+    -workflows: Map<string, MastraWorkflow>
+  }
+  note right of WorkflowManager
+    - Manages workflow registration and execution
+    - Supports long-running, stateful, and human-in-the-loop workflows
+    - Can delegate to MCP for remote orchestration
+  end note
+  class ToolRegistry <<Tool Registry>> {
+    +registerTool(tool: MastraTool)
+    +getTool(name: string): MastraTool
+    -tools: Map<string, MastraTool>
+  }
+  note right of ToolRegistry
+    - Holds all locally available tools
+    - Used for local tool execution and validation
+    - Can be extended to support tool versioning
+  end note
+  class MCPToolInvoker <<MCP Tool Invoker>> {
+    +invokeTool(toolName: string, input: any): Promise<any>
+    -mcpOrchestrator: MastraOrchestrator
+  }
+  note right of MCPToolInvoker
+    - Responsible for invoking tools via MCP (Mastra)
+    - Handles remote errors, retries, and response normalization
+    - Abstracts away MCPProvider/MastraClient details from LLMService
+  end note
+  class MastraOrchestrator <<Mastra Suite>> {
+    +runAgent(agentName: string, input: any): Promise<any>
+    +runTool(toolName: string, input: any): Promise<any>
+    +runWorkflow(workflowName: string, input: any): Promise<any>
+    +queryRAG(kbName: string, query: string): Promise<any>
+    +runEval(evalName: string, output: any): Promise<number>
+    +callIntegration(integrationName: string, method: string, params: any): Promise<any>
+    -mcpProvider: MCPProvider
+  }
+  note right of MastraOrchestrator
+    - Unified entry point for all Mastra/MCP-powered features
+    - Encapsulates all remote orchestration logic
+    - Should be the only class aware of MCPProvider/MastraClient
+    - Add caching, logging, and error handling here
+    - Extendable for future Mastra features
+  end note
+}
+
+' Provider Layer: Implements LLM API logic, context management, and model variants
+package "Provider Layer" {
+  interface iLLMProvider {
+    +generateText(request: iLLMRequest): Promise<iLLMResponse>
+  }
+  class GeminiProvider <<Provider>> implements iLLMProvider {
+    +generateText(request: iLLMRequest): Promise<iLLMResponse>
+    -model: GenerativeModel
+    -apiKey: string
+    -modelName: string
+  }
+  class GeminiProviderManager <<Manager>> implements iLLMProvider {
+    +addModelVariant(config: GeminiModelConfig): GeminiProvider
+    +getProvider(modelName: string): GeminiProvider
+    +generateText(request: iLLMRequest, modelName?: string): Promise<iLLMResponse>
+    -providers: Map<string, GeminiProvider>
+  }
+  class GeminiChatManager <<Context Manager>> {
+    +trimHistory(history, newMessage): Promise<GeminiChatMessage[]>
+    +createExplicitCache(systemInstruction, contents): Promise<string>
+    +generateWithCache(cacheKey, userMessage): Promise<unknown>
+    -toGeminiContent(history): Content[]
+    -genAI: GoogleGenerativeAI
+    -modelName: string
+    -tokenLimit: number
+  }
+  class MCPProvider <<Provider>> implements iLLMProvider {
+    +generateText(request: iLLMRequest): Promise<iLLMResponse>
+    +runTool(toolName: string, input: any): Promise<any>
+    +runAgent(agentName: string, input: any): Promise<any>
+    +runWorkflow(workflowName: string, input: any): Promise<any>
+    +queryRAG(kbName: string, query: string): Promise<any>
+    +runEval(evalName: string, output: any): Promise<number>
+    +callIntegration(integrationName: string, method: string, params: any): Promise<any>
+    -mastraClient: MastraClient
+  }
+  note right of MCPProvider
+    - Integrates with Mastra MCP server
+    - Handles all remote orchestration (tools, agents, workflows, RAG, evals, integrations)
+    - Should be stateless, all state is in Mastra/MCP
+    - Handles protocol, retries, and error normalization
+  end note
+  class MastraClient <<External SDK>> {
+    +callModel(model, input, options): Promise<Response>
+    +runTool(toolName, input): Promise<Response>
+    +runAgent(agentName, input): Promise<Response>
+    +runWorkflow(workflowName, input): Promise<Response>
+    +queryRAG(kbName, query): Promise<Response>
+    +runEval(evalName, input): Promise<Response>
+    +callIntegration(integrationName, method, params): Promise<any>
+  }
+  note right of MastraClient
+    - Handles all HTTP/gRPC/WebSocket communication with Mastra MCP server
+    - Should be robust to network errors and timeouts
+    - Handles authentication, retries, and protocol upgrades
+    - Should be easily mockable for testing
+  end note
+}
+
+' Mastra Orchestration: Advanced features for LLMs
+package "Mastra Orchestration" {
+  class MastraAgent <<Agent>> {
+    +name: string
+    +description: string
+    +tools: string[]
+    +workflow: string
+    +knowledgeBase: string
+    +run(input: any, context?: any): Promise<any>
+  }
+  note right of MastraAgent
+    - Represents a single agent definition (local or remote)
+    - Can be registered locally or in Mastra MCP
+    - Should be stateless, all state in workflow/context
+  end note
+  class MastraTool <<Tool>> {
+    +name: string
+    +description: string
+    +schema: object
+    +execute(input: any, context?: any): Promise<any>
+  }
+  note right of MastraTool
+    - Represents a single tool (function) callable by agents or workflows
+    - Can be local (in-process) or remote (MCP)
+    - Schema should be JSON Schema for validation
+  end note
+  class MastraWorkflow <<Workflow>> {
+    +name: string
+    +steps: MastraWorkflowStep[]
+    +run(input: any, context?: any): Promise<any>
+  }
+  note right of MastraWorkflow
+    - Represents a workflow (graph of steps, can include tools, agents, human input)
+    - Can be local or remote (MCP)
+    - Should support error handling, retries, and tracing
+  end note
+  class MastraRAG <<Knowledge Base>> {
+    +name: string
+    +description: string
+    +query(query: string, options?: any): Promise<any>
+  }
+  note right of MastraRAG
+    - Represents a knowledge base for retrieval-augmented generation
+    - Can be used by agents, tools, or workflows
+    - Should support chunking, embedding, and vector search
+  end note
+  class MastraIntegration <<Integration>> {
+    +name: string
+    +description: string
+    +call(method: string, params: any): Promise<any>
+  }
+  note right of MastraIntegration
+    - Represents a third-party API integration
+    - Can be called as a tool or workflow step
+    - Should be type-safe and support parameter validation
+  end note
+  class MastraEval <<Eval/Test>> {
+    +name: string
+    +description: string
+    +evaluate(output: any, context?: any): Promise<number>
+  }
+  note right of MastraEval
+    - Represents an automated evaluation (model-graded, rule-based, or statistical)
+    - Can be used for testing, monitoring, or continuous evals
+    - Should return normalized scores and support custom logic
+  end note
+}
+
+' Domain & Config: Value objects, config, and message structure
+package "Domain & Config" {
+  class GeminiChatMessage <<Value Object>> {
+    role: string
+    parts: Array<{text: string} | { [key: string]: any }>
+  }
+  class llmConfig <<Config>>
+  note right of llmConfig
+    - Central config for all providers, API keys, endpoints, and system instructions
+    - Should be loaded at startup and validated
+    - Supports hot-reload for config changes
+  end note
+}
+
+' Relationships
+WebhookController --> LLMService : invokes
+HealthcheckController --> LLMService : invokes
+AgentController --> AgentManager : invokes
+WorkflowController --> WorkflowManager : invokes
+ToolController --> LLMService : invokes runTool
+LLMService --> iLLMProvider : uses
+LLMService --> GeminiProvider : default
+LLMService --> GeminiProviderManager : (optionally)
+LLMService --> MCPProvider : (optionally)
+LLMService --> ToolRegistry : uses
+LLMService --> MCPToolInvoker : uses for MCP tool calls
+LLMService --> MastraOrchestrator : uses for all MCP/remote orchestration
+AgentManager --> MastraAgent : manages
+WorkflowManager --> MastraWorkflow : manages
+ToolRegistry --> MastraTool : manages
+RAGManager --> MastraRAG : manages
+EvalManager --> MastraEval : manages
+IntegrationManager --> MastraIntegration : manages
+GeminiProviderManager --> GeminiProvider : manages
+GeminiProvider ..> GeminiChatManager : uses for context/history
+GeminiProvider --> llmConfig : reads
+GeminiChatManager --> GeminiChatMessage : manages
+MCPProvider --> MastraClient : uses
+MCPProvider --> llmConfig : reads
+
+' Tool invocation flow
+note as N2
+- When a tool call is needed (e.g., from an agent or workflow), LLMService decides local vs remote:
+  * For local tools: uses ToolRegistry.getTool and executes directly
+  * For remote/MCP tools: delegates to MCPToolInvoker, which calls MastraOrchestrator.runTool
+- MastraOrchestrator abstracts all MCPProvider/MastraClient details
+- MastraClient handles protocol, error handling, and response parsing
+- This separation allows hybrid local/MCP tool orchestration and easy future extension
+- Always validate tool input against schema before execution
+end note
+
+' External dependency
+class GoogleGenerativeAI <<External SDK>>
+GeminiProvider --> GoogleGenerativeAI
+GeminiChatManager --> GoogleGenerativeAI
+
+' Notes:
+note as N1
+- API Layer is expanded for agent, workflow, and tool endpoints, each with clear responsibilities
+- Application Layer orchestrates LLMs, agents, tools, workflows, RAG, evals, and integrations, and is the main business logic hub
+- Provider Layer is fully pluggable: add/remove providers at runtime, and is stateless
+- MastraOrchestrator is the single entry point for all MCP-powered features, and should be extended for new Mastra capabilities
+- ToolRegistry and MCPToolInvoker allow for both local and remote tool execution, with clear separation
+- All config (API keys, system instructions, MCP endpoints) is loaded from llmConfig, which should support hot-reload
+- GeminiChatManager is a dedicated class (no utils), all context logic is here
+- ProviderManager pattern allows runtime model/config switching
+- Always add robust error handling, logging, and input validation at every layer
+- TODO: Explicit caching support is stubbed in GeminiChatManager
+end note
+
+@enduml

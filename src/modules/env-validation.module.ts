@@ -1,4 +1,4 @@
-import LoggingTags from "@/shared/enums/logging-tags.enum";
+import LoggingTags from "src/common/enums/logging-tags.enum";
 import { Logger } from "../common/logging";
 
 /**
@@ -13,7 +13,7 @@ interface EnvVar {
 
 // Required environment variables
 const ENV_VARS: EnvVar[] = [
-  { name: "HTTP_PORT", description: "HTTP port number", required: true, validator: (v) => !isNaN(Number(v)) },
+  // { name: "HTTP_PORT", description: "HTTP port number", required: true, validator: (v) => !isNaN(Number(v)) },
   // { name: "HTTPS_PORT", description: "HTTPS port number", required: true, validator: (v) => !isNaN(Number(v)) },
   // { name: "LISTEN_HTTP_ONLY", description: "Listen only on HTTP", required: true, validator: (v) => v === 'true' || v === 'false' },
   // { name: "HTTPS_KEY_PATH", description: "HTTPS key file path", required: true },
