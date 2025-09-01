@@ -1,11 +1,7 @@
 {
-  "name": "money-opus",
+  "name": "CHANGEME",
   "version": "1.0.0",
   "description": "",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/cheonglol/money-opus.git"
-  },
   "license": "ISC",
   "author": "",
   "type": "commonjs",
