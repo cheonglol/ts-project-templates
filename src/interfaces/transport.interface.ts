@@ -1,4 +1,4 @@
-import { APP_ERROR_CODE } from "../enums/errorCodes.enum";
+import { APP_ERROR_CODE } from "../enums/error-codes.enum";
 
 /**
  * Standard response body structure for all HTTP endpoints

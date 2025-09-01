@@ -2,6 +2,8 @@
  * Error handling system for JustifyPrint Chatbot Service
  */
 
+import { HttpStatusCode } from "axios";
+
 // Error categories
 export enum ErrorCategory {
   VALIDATION = "VALIDATION",
@@ -12,18 +14,6 @@ export enum ErrorCategory {
   DATABASE = "DATABASE",
   SERVER = "SERVER",
   UNKNOWN = "UNKNOWN",
-}
-
-// HTTP status codes
-export enum HttpStatusCode {
-  BAD_REQUEST = 400,
-  UNAUTHORIZED = 401,
-  FORBIDDEN = 403,
-  NOT_FOUND = 404,
-  CONFLICT = 409,
-  UNPROCESSABLE_ENTITY = 422,
-  INTERNAL_SERVER_ERROR = 500,
-  SERVICE_UNAVAILABLE = 503,
 }
 
 // Specific error codes
@@ -72,7 +62,7 @@ export class ApplicationError extends Error {
   constructor({
     name = "ApplicationError",
     message,
-    statusCode = HttpStatusCode.INTERNAL_SERVER_ERROR,
+    statusCode = HttpStatusCode.InternalServerError,
     category = ErrorCategory.UNKNOWN,
     errorCode = ErrorCode.UNKNOWN_ERROR,
     isOperational = true,
@@ -105,7 +95,7 @@ export class ValidationError extends ApplicationError {
     super({
       name: "ValidationError",
       message,
-      statusCode: HttpStatusCode.BAD_REQUEST,
+      statusCode: HttpStatusCode.BadRequest,
       category: ErrorCategory.VALIDATION,
       errorCode,
       context,
@@ -118,7 +108,7 @@ export class AuthenticationError extends ApplicationError {
     super({
       name: "AuthenticationError",
       message,
-      statusCode: HttpStatusCode.UNAUTHORIZED,
+      statusCode: HttpStatusCode.Unauthorized,
       category: ErrorCategory.AUTHENTICATION,
       errorCode,
       context,
@@ -131,7 +121,7 @@ export class AuthorizationError extends ApplicationError {
     super({
       name: "AuthorizationError",
       message,
-      statusCode: HttpStatusCode.FORBIDDEN,
+      statusCode: HttpStatusCode.Forbidden,
       category: ErrorCategory.AUTHORIZATION,
       errorCode,
       context,
@@ -144,7 +134,7 @@ export class ResourceNotFoundError extends ApplicationError {
     super({
       name: "ResourceNotFoundError",
       message,
-      statusCode: HttpStatusCode.NOT_FOUND,
+      statusCode: HttpStatusCode.NotFound,
       category: ErrorCategory.RESOURCE_NOT_FOUND,
       errorCode,
       context,
@@ -155,7 +145,7 @@ export class ResourceNotFoundError extends ApplicationError {
 export class ExternalServiceError extends ApplicationError {
   constructor({
     message,
-    statusCode = HttpStatusCode.SERVICE_UNAVAILABLE,
+    statusCode = HttpStatusCode.ServiceUnavailable,
     errorCode = ErrorCode.EXTERNAL_API_ERROR,
     context = {},
   }: {
@@ -180,7 +170,7 @@ export class DatabaseError extends ApplicationError {
     super({
       name: "DatabaseError",
       message,
-      statusCode: HttpStatusCode.INTERNAL_SERVER_ERROR,
+      statusCode: HttpStatusCode.InternalServerError,
       category: ErrorCategory.DATABASE,
       errorCode,
       context,

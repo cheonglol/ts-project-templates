@@ -1,7 +1,7 @@
 // filepath: c:\Users\Lester\Desktop\repos\justifyprint-chatbot-server\src\service\node-cron.service.ts
-import logger from "../common/logging";
-import LoggingTags from "../common/enums/logging-tags.enum";
 import * as cron from "node-cron";
+import LoggingTags from "../enums/logging-tags.enum";
+import logger from "../logging";
 
 export enum CRONJOB_CONFIG {
   CRONJOB_TIMEZONE = "Asia/Singapore",
@@ -89,4 +89,4 @@ class CronJobService {
  */
 const CronJobServiceInstance = CronJobService.getInstance();
 
-export { CronJobServiceInstance };
+export { CronJobServiceInstance, CronJobService };

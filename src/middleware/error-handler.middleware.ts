@@ -1,9 +1,10 @@
+import { HttpStatusCode } from "axios";
 import { FastifyError, FastifyReply, FastifyRequest } from "fastify";
-import { ApplicationError, ErrorCategory, HttpStatusCode } from "../common/class/errors.class";
-import { APP_ERROR_CODE } from "../common/enums/errorCodes.enum";
-import { IStandardResponseBody } from "../common/interfaces/transport.interface";
-import logger from "../common/logging";
-import LoggingTags from "../common/enums/logging-tags.enum";
+import { ApplicationError, ErrorCategory } from "../class/common/errors.class";
+import { APP_ERROR_CODE } from "../enums/error-codes.enum";
+import LoggingTags from "../enums/logging-tags.enum";
+import { IStandardResponseBody } from "../interfaces/transport.interface";
+import logger from "../logging/logger";
 
 /**
  * Global error handler for the Fastify application
@@ -35,11 +36,11 @@ export function errorHandler(error: FastifyError, request: FastifyRequest, reply
   };
 
   // Set appropriate status code
-  let statusCode = HttpStatusCode.INTERNAL_SERVER_ERROR;
+  let statusCode = HttpStatusCode.InternalServerError;
 
   // Process ApplicationError instances for more specific responses
   if (error instanceof ApplicationError) {
-    statusCode = error.statusCode;
+    statusCode = error.statusCode || HttpStatusCode.InternalServerError;
     errorResponse = {
       success: false,
       msg: error.message,
@@ -51,7 +52,7 @@ export function errorHandler(error: FastifyError, request: FastifyRequest, reply
     };
   } else if (error.validation) {
     // Handle Fastify validation errors
-    statusCode = HttpStatusCode.BAD_REQUEST;
+    statusCode = HttpStatusCode.BadRequest;
     errorResponse = {
       success: false,
       msg: "Validation error",

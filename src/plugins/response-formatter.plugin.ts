@@ -1,6 +1,6 @@
 import { FastifyPluginAsync, FastifyReply, FastifyRequest } from "fastify";
 import fp from "fastify-plugin";
-import { Response } from "../common/class/response.class";
+import { Response } from "../class/common/response.class";
 
 const responseFormatterPlugin: FastifyPluginAsync = async (fastify) => {
   fastify.addHook("onSend", async (_request: FastifyRequest, _reply: FastifyReply, payload) => {

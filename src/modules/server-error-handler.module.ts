@@ -1,9 +1,9 @@
 import { FastifyInstance } from "fastify";
 import requestLoggerMiddleware from "../middleware/request-logger.middleware";
 
-import logger from "@/shared/logging/logger";
-import LoggingTags from "@/shared/enums/logging-tags.enum";
 import errorHandler from "src/middleware/error-handler.middleware";
+import LoggingTags from "src/enums/logging-tags.enum";
+import logger from "src/logging";
 
 /**
  * Register error handling and logging middleware with a Fastify instance

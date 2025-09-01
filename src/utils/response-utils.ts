@@ -1,10 +1,10 @@
 import { iResponseModel_ErrorData, IStandardResponseBody } from "../interfaces/transport.interface";
-import { Response, ResponseStatus } from "../class/response.class";
-import { ApplicationError, ErrorCategory, ErrorCode } from "../class/errors.class";
-import { APP_ERROR_CODE } from "../enums/errorCodes.enum";
+import { Response, ResponseStatus } from "../class/common/response.class";
+import { ApplicationError, ErrorCategory, ErrorCode } from "../class/common/errors.class";
+import { APP_ERROR_CODE } from "../enums/error-codes.enum";
 import logger from "../logging";
 import { AxiosError } from "axios";
-import LoggingTags from "src/common/enums/logging-tags.enum";
+import LoggingTags from "src/enums/logging-tags.enum";
 
 /**
  * Checks if an error is an ApplicationError

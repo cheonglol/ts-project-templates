@@ -1,20 +1,19 @@
 import { FastifyRequest, FastifyReply } from "fastify";
-import { Response } from "../common/class/response.class";
+import { BaseController } from "../class/common/base-controller.class";
 
-export class HealthCheckController {
-  async checkHealth(_request: FastifyRequest, _reply: FastifyReply) {
-    return Response.createSuccessResponse("Service is healthy", {
+export class HealthCheckController extends BaseController {
+  async checkHealth(_request: FastifyRequest, reply: FastifyReply): Promise<void> {
+    this.sendSuccess(reply, "Service is healthy", {
       status: "UP",
-      timestamp: new Date().toISOString(),
     });
   }
 
-  async getDetailedHealth(_request: FastifyRequest, _reply: FastifyReply) {
+  async getDetailedHealth(_request: FastifyRequest, reply: FastifyReply): Promise<void> {
     // Collect system metrics
     const memoryUsage = process.memoryUsage();
     const uptime = process.uptime();
 
-    return Response.createSuccessResponse("Health check details", {
+    this.sendSuccess(reply, "Health check details", {
       status: "UP",
       uptime: `${uptime.toFixed(2)} seconds`,
       memory: {
@@ -22,7 +21,6 @@ export class HealthCheckController {
         heapTotal: `${Math.round(memoryUsage.heapTotal / 1024 / 1024)} MB`,
         heapUsed: `${Math.round(memoryUsage.heapUsed / 1024 / 1024)} MB`,
       },
-      timestamp: new Date().toISOString(),
     });
   }
 }

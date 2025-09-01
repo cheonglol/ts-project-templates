@@ -44,10 +44,21 @@ export class Logger {
   }
 
   /**
-   * Get current logger configuration
+   * Reset the singleton instance (for testing purposes)
    */
-  public getConfig(): LoggerConfig {
-    return { ...this.config };
+  public static resetInstance(): void {
+    Logger.instance = null as unknown as Logger;
+  }
+
+  /**
+   * Create a new logger instance with custom config (for testing)
+   */
+  public static createTestInstance(config?: Partial<LoggerConfig>): Logger {
+    const logger = new Logger();
+    if (config) {
+      logger.configure(config);
+    }
+    return logger;
   }
 
   /**
@@ -116,8 +127,13 @@ export class Logger {
       // Here we can add additional outputs like file logging
     } catch (error) {
       // Fallback to basic logging if formatting fails
-      console.error(`[LOGGER_ERROR] Failed to log message:`, error);
-      console.error(`Original message:`, message);
+      // Use process.stderr.write to avoid mocked console methods
+      try {
+        process.stderr.write(`[LOGGER_ERROR] Failed to log message: ${error}\n`);
+        process.stderr.write(`Original message: ${message}\n`);
+      } catch {
+        // If even stderr fails, silently ignore to prevent infinite loops
+      }
     }
   }
 

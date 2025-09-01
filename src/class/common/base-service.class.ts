@@ -1,5 +1,8 @@
+import { Logger } from "../../logging/logger";
+
 export interface Repository<T> {
   findAll(): Promise<T[]>;
+  findAllPaginated(page: number, limit: number): Promise<{ items: T[]; total: number }>;
   findById(id: string | number): Promise<T | null>;
   create(data: Partial<T>): Promise<T>;
   update(id: string | number, data: Partial<T>): Promise<T | null>;
@@ -8,6 +11,7 @@ export interface Repository<T> {
 
 export abstract class BaseService<T> {
   protected abstract getRepository(): Repository<T>;
+  protected logger = Logger.getInstance();
 
   async findAll(): Promise<T[]> {
     try {
@@ -15,6 +19,16 @@ export abstract class BaseService<T> {
     } catch (error) {
       this.handleError(error, "Error retrieving all items");
       return [];
+    }
+  }
+
+  async findAllPaginated(page: number, limit: number): Promise<{ items: T[]; total: number; page: number; limit: number }> {
+    try {
+      const { items, total } = await this.getRepository().findAllPaginated(page, limit);
+      return { items, total, page, limit };
+    } catch (error) {
+      this.handleError(error, "Error retrieving paginated items");
+      return { items: [], total: 0, page, limit };
     }
   }
 
@@ -55,6 +69,6 @@ export abstract class BaseService<T> {
   }
 
   protected handleError(error: unknown, defaultMessage: string): void {
-    console.error(defaultMessage, error);
+    this.logger.error(`${defaultMessage}: ${error}`, this.constructor.name);
   }
 }

@@ -1,4 +1,4 @@
-import LoggingTags from "src/common/enums/logging-tags.enum";
+import LoggingTags from "src/enums/logging-tags.enum";
 import logger from "../logging";
 
 const timestamp = () => new Date().toLocaleString("en-SG", { timeZone: "Asia/Singapore" });

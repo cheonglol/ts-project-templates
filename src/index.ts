@@ -1,12 +1,12 @@
 import dotenv from "dotenv";
 import fastify from "fastify";
-import logger from "./common/logging";
-import { validateEnvironment } from "./modules/env-validation.module";
+import logger from "./logging/logger";
+import { validateEnvironment, EnvVarKeys } from "./modules/env-validation.module";
 import healthcheckRoutes from "./routes/healthcheck.routes";
 import setupErrorHandling from "./modules/server-error-handler.module";
-import { CronJobServiceInstance } from "./service/node-cron.service";
+import { CronJobServiceInstance } from "./services/node-cron.service";
 import packageJson from "../package.json";
-import LoggingTags from "./common/enums/logging-tags.enum";
+import LoggingTags from "./enums/logging-tags.enum";
 
 // Import your route files directly here
 // import anotherRoutes from "./routes/another.routes';
@@ -35,7 +35,7 @@ async function startServer(): Promise<void> {
 
   // Start the server
   try {
-    const port = process.env.PORT ? parseInt(process.env.PORT) : parseInt(process.env.HTTP_PORT || "8080");
+    const port = process.env[EnvVarKeys.PORT] ? parseInt(process.env[EnvVarKeys.PORT]!) : parseInt(process.env[EnvVarKeys.HTTP_PORT] || "8080");
     await server.listen({ port, host: "0.0.0.0" }).then(() => {
       // Register cron jobs here if needed
       // Example: CronJobServiceInstance.registerTask({

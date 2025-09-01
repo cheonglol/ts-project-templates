@@ -1,10 +1,10 @@
 import axios, { AxiosError, AxiosInstance, AxiosRequestConfig, AxiosResponse } from "axios";
-import { IStandardResponseBody, IErrorResponseBody } from "../interfaces/transport.interface";
-import logger from "../logging";
-import { APP_ERROR_CODE } from "../enums/errorCodes.enum";
-import { toStandardResponse, handleError } from "../utils/response-utils";
+import { IStandardResponseBody, IErrorResponseBody } from "../../interfaces/transport.interface";
+import logger from "../../logging";
+import { APP_ERROR_CODE } from "../../enums/error-codes.enum";
+import { toStandardResponse, handleError } from "../../utils/response-utils";
 import { Response, ResponseStatus } from "./response.class";
-import LoggingTags from "../enums/logging-tags.enum";
+import LoggingTags from "../../enums/logging-tags.enum";
 
 /**
  * AxiosClient - Singleton class for managing HTTP requests
