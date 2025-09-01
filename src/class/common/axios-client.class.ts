@@ -28,6 +28,17 @@ export default class AxiosClient {
   }
 
   /**
+   * Test helper: reset the internal singleton instance and pending requests map.
+   * This should only be used in test setups to avoid leaking state between tests.
+   */
+  public static resetForTests(): void {
+    // remove interceptors by dropping the instance
+
+    (AxiosClient as any).instance = undefined;
+    AxiosClient.pendingRequests = new Map();
+  }
+
+  /**
    * Returns the singleton Axios instance, creating it if it doesn't exist
    *
    * @param config - Optional Axios configuration to override defaults

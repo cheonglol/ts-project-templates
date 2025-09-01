@@ -3,12 +3,12 @@ export default {
   meta: {
     type: "problem",
     docs: {
-      description: "Disallow direct usage of process.env. Use EnvVarKeys enum instead.",
+      description: "Disallow direct usage of process.env. Use ENV_VAR_KEYS array instead.",
       category: "Best Practices",
       recommended: true
     },
     messages: {
-      noRawProcessEnv: "Direct usage of process.env. is banned. Use EnvVarKeys enum for environment variable access."
+      noRawProcessEnv: "Direct usage of process.env. is banned. Use ENV_VAR_KEYS array for environment variable access."
     },
     schema: []
   },
@@ -20,7 +20,7 @@ export default {
           node.object.object.name === "process" &&
           node.object.property.name === "env"
         ) {
-          // Only allow process.env[EnvVarKeys.X] style
+          // Allow process.env[EnvVarKeys.SOMETHING] but disallow process.env.SOMETHING or process.env["string"]
           if (
             node.property.type === "Identifier" ||
             (node.property.type === "Literal" && typeof node.property.value === "string")
@@ -30,6 +30,7 @@ export default {
               messageId: "noRawProcessEnv"
             });
           }
+          // If property.type is "MemberExpression", it's bracket notation like process.env[EnvVarKeys.PORT] - allow it
         }
       }
     };

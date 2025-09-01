@@ -13,8 +13,8 @@ interface HealthResponse {
 describe("HealthCheckController", () => {
   let controller: HealthCheckController;
   let mockReply: {
-    status: jest.MockedFunction<(code: number) => any>;
-    send: jest.MockedFunction<(data: HealthResponse) => any>;
+    status: jest.Mock<FastifyReply, [number]>;
+    send: jest.Mock<FastifyReply, [HealthResponse]>;
   };
   let mockRequest: jest.Mocked<FastifyRequest>;
 

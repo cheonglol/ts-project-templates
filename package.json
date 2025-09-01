@@ -1,24 +1,25 @@
 {
-  "name": "ts-fastify-backend-template",
+  "name": "money-opus",
   "version": "1.0.0",
   "description": "",
-  "homepage": "https://github.com/cheonglol/ts-fastify-backend-template#readme",
-  "bugs": {
-    "url": "https://github.com/cheonglol/ts-fastify-backend-template/issues"
-  },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/cheonglol/ts-fastify-backend-template.git"
+    "url": "git+https://github.com/cheonglol/money-opus.git"
   },
   "license": "ISC",
   "author": "",
   "type": "commonjs",
   "main": "dist/index.js",
   "scripts": {
-    "test": "jest",
+    "test": "jest --config jest.config.js",
+    "test:write": "npm run test > testoutput.txt 2>&1",
+    "test:verbose": "cross-env TEST_LOG_MODE=verbose jest --config jest.config.js",
+    "test:quiet": "cross-env TEST_LOG_MODE=quiet jest --config jest.config.js",
+    "test:json": "node -e \"require('fs').mkdirSync('./.temp', { recursive: true })\" && jest --json --outputFile=./.temp/jest-output.json --config jest.config.js",
     "prepare": "husky install",
     "build": "tsc",
-    "check": "tsc --noEmit && eslint .",
+    "typecheck": "tsc --noEmit",
+    "check": "npx eslint --fix \"**/*.{js,jsx,ts,tsx}\" && npx prettier --write \"**/*.{js,jsx,ts,tsx,json,md,yml,yaml}\" && tsc --noEmit && echo \"lint & tsc check passed\"",
     "start": "ts-node -r tsconfig-paths/register src/index.ts",
     "dev": "nodemon --exec ts-node -r tsconfig-paths/register src/index.ts",
     "updates": "ncu -u"
@@ -43,6 +44,7 @@
     "@typescript-eslint/parser": "^8.32.1",
     "eslint": "^9.27.0",
     "eslint-config-prettier": "^10.1.5",
+    "eslint-formatter-unix": "^8.40.0",
     "jest": "^30.1.2",
     "lint-staged": "^16.0.0",
     "nodemon": "^3.1.10",
@@ -53,22 +55,5 @@
     "tsconfig-paths": "^4.2.0",
     "typescript": "^5.8.3",
     "typescript-eslint": "^8.32.1"
-  },
-  "jest": {
-    "preset": "ts-jest",
-    "testEnvironment": "node",
-    "roots": [
-      "<rootDir>/src"
-    ],
-    "testMatch": [
-      "**/__tests__/**/*.ts",
-      "**/?(*.)+(spec|test).ts"
-    ],
-    "setupFilesAfterEnv": [
-      "<rootDir>/src/test/setup.ts"
-    ],
-    "clearMocks": true,
-    "resetMocks": true,
-    "restoreMocks": true
   }
 }

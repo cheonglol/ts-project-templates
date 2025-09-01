@@ -1,4 +1,3 @@
-
 # ts-fastify-backend-template
 
 A robust TypeScript backend template leveraging Fastify, designed for scalable and maintainable service development. This template provides a modular architecture, opinionated project structure, and built-in utilities for error handling, logging, validation, and more.
@@ -37,6 +36,7 @@ src/
 ├── routes/        # Route registration and definitions
 └── utils/         # Generic helper utilities
 ```
+
 Refer to [`docs/backend-architecture.md`](https://github.com/cheonglol/ts-fastify-backend-template/blob/main/docs/backend-architecture.md) for a detailed breakdown.
 
 ---
@@ -44,6 +44,7 @@ Refer to [`docs/backend-architecture.md`](https://github.com/cheonglol/ts-fastif
 ## Getting Started
 
 1. **Clone & Install**
+
    ```bash
    git clone https://github.com/cheonglol/ts-fastify-backend-template.git
    cd ts-fastify-backend-template
@@ -54,12 +55,15 @@ Refer to [`docs/backend-architecture.md`](https://github.com/cheonglol/ts-fastif
    - Copy `.env.example` to `.env` and adjust settings as needed.
 
 3. **Setup Husky (First Time)**
+
    ```bash
    npm run prepare
    ```
+
    This will set up Git hooks for code quality checks.
 
 4. **Development**
+
    ```bash
    npm run dev
    ```
@@ -77,6 +81,7 @@ Refer to [`docs/backend-architecture.md`](https://github.com/cheonglol/ts-fastif
 ### Decorator-Based Controllers
 
 Define endpoints in `src/controller` using class decorators for clean and organized route logic. Example:
+
 ```typescript
 @Controller("/users")
 export class UserController extends BaseController {
@@ -86,6 +91,7 @@ export class UserController extends BaseController {
   }
 }
 ```
+
 Routes are auto-registered at startup.
 
 ### Plugin System

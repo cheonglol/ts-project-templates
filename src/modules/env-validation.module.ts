@@ -17,7 +17,7 @@ interface EnvVar {
   /**
    * The name of the environment variable.
    */
-  name: EnvVarKeys;
+  name: EnvVarKey;
   /**
    * Description of what the environment variable is used for.
    */
@@ -34,20 +34,40 @@ interface EnvVar {
   validator?: (value: string) => boolean;
 }
 
-// Unified environment variable keys as enums
-export enum EnvVarKeys {
-  CUSTOM_WEBHOOK_SECRET = "CUSTOM_WEBHOOK_SECRET",
-  PORT = "PORT",
-  HTTP_PORT = "HTTP_PORT",
-  NODE_ENV = "NODE_ENV",
-}
+// Unified environment variable keys as a const array (single source of truth)
+export const ENV_VAR_KEYS = [
+  "CUSTOM_WEBHOOK_SECRET",
+  "OLLAMA_SERVICE_URL",
+  "OLLAMA_TEST_MODEL",
+  "DEEPSEEK_MODEL",
+  "OLLAMA_REQUIRE_STRUCTURED",
+  "PORT",
+  "HTTP_PORT",
+  "NODE_ENV",
+] as const;
+
+export type EnvVarKey = (typeof ENV_VAR_KEYS)[number];
+
+// Provide a convenient lookup object (read-only) to keep existing callsites working
+export const EnvVarKeys: { readonly [K in EnvVarKey]: K } = ENV_VAR_KEYS.reduce(
+  (acc, k) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (acc as any)[k] = k;
+    return acc;
+  },
+  {} as { [k in EnvVarKey]: k }
+) as { readonly [K in EnvVarKey]: K };
 
 // Required environment variables
 const ENV_VARS: EnvVar[] = [
-  { name: EnvVarKeys.CUSTOM_WEBHOOK_SECRET, description: "Secret for webhook signature verification", required: false },
-  { name: EnvVarKeys.PORT, description: "Port for the server", required: false },
-  { name: EnvVarKeys.HTTP_PORT, description: "HTTP port for the server", required: false },
-  { name: EnvVarKeys.NODE_ENV, description: "Node environment", required: false },
+  { name: "CUSTOM_WEBHOOK_SECRET", description: "Secret for webhook signature verification", required: false },
+  { name: "OLLAMA_SERVICE_URL", description: "Ollama API Service URL", required: true },
+  { name: "OLLAMA_TEST_MODEL", description: "Optional test override model", required: false },
+  { name: "DEEPSEEK_MODEL", description: "Optional test model name", required: false },
+  { name: "OLLAMA_REQUIRE_STRUCTURED", description: "Require structured JSON in tests", required: false },
+  { name: "PORT", description: "Port for the server", required: false },
+  { name: "HTTP_PORT", description: "HTTP port for the server", required: false },
+  { name: "NODE_ENV", description: "Node environment", required: false },
 ];
 
 /**

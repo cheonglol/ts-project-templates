@@ -25,9 +25,8 @@ async function startServer(): Promise<void> {
 
   // Register base routes
   server.get("/", async () => {
-    return { message: "JustifyPrint Chatbot Service is running" };
+    return { message: await import("package.json").then((pkg) => pkg.default.name), status: "ok" };
   });
-  logger.info(`Registered route: GET /`, startServer.name, LoggingTags.STARTUP);
 
   // Register health check routes
   await server.register(healthcheckRoutes, { prefix: "/healthcheck" });
@@ -35,7 +34,8 @@ async function startServer(): Promise<void> {
 
   // Start the server
   try {
-    const port = process.env[EnvVarKeys.PORT] ? parseInt(process.env[EnvVarKeys.PORT]!) : parseInt(process.env[EnvVarKeys.HTTP_PORT] || "8080");
+    const portRaw = process.env[EnvVarKeys.PORT] ?? process.env[EnvVarKeys.HTTP_PORT] ?? "8080";
+    const port = parseInt(String(portRaw), 10);
     await server.listen({ port, host: "0.0.0.0" }).then(() => {
       // Register cron jobs here if needed
       // Example: CronJobServiceInstance.registerTask({
