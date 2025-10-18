@@ -1,6 +1,6 @@
 import { FastifyRequest, FastifyReply } from "fastify";
-import LoggingTags from "src/enums/logging-tags.enum";
-import logger from "src/logging";
+import LoggingTags from "../data/enums/logging-tags.enum";
+import logger from "../shared/logging";
 
 /**
  * Middleware to log all HTTP requests and responses

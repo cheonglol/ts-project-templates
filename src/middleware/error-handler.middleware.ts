@@ -1,10 +1,10 @@
 import { HttpStatusCode } from "axios";
 import { FastifyError, FastifyReply, FastifyRequest } from "fastify";
 import { ApplicationError, ErrorCategory } from "../class/common/errors.class";
-import { APP_ERROR_CODE } from "../enums/error-codes.enum";
-import LoggingTags from "../enums/logging-tags.enum";
-import { IStandardResponseBody } from "../interfaces/transport.interface";
-import logger from "../logging/logger";
+import { APP_ERROR_CODE } from "../data/enums/error-codes.enum";
+import LoggingTags from "../data/enums/logging-tags.enum";
+import { IStandardResponseBody } from "../data/interfaces/transport.interface";
+import logger from "../shared/logging/logger";
 
 /**
  * Global error handler for the Fastify application

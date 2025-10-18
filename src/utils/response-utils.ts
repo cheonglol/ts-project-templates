@@ -1,10 +1,10 @@
-import { iResponseModel_ErrorData, IStandardResponseBody } from "../interfaces/transport.interface";
+import { IResponseModel_ErrorData, IStandardResponseBody } from "../data/interfaces/transport.interface";
 import { Response, ResponseStatus } from "../class/common/response.class";
 import { ApplicationError, ErrorCategory, ErrorCode } from "../class/common/errors.class";
-import { APP_ERROR_CODE } from "../enums/error-codes.enum";
-import logger from "../logging";
+import { APP_ERROR_CODE } from "../data/enums/error-codes.enum";
+import logger from "../shared/logging";
 import { AxiosError } from "axios";
-import LoggingTags from "src/enums/logging-tags.enum";
+import LoggingTags from "../data/enums/logging-tags.enum";
 
 /**
  * Checks if an error is an ApplicationError
@@ -117,7 +117,7 @@ function mapErrorCodeToAppErrorCode(errorCode: ErrorCode): APP_ERROR_CODE {
 /**
  * Extracts error details from a Response object
  */
-export function extractErrorDetails(response: Response): iResponseModel_ErrorData | null {
+export function extractErrorDetails(response: Response): IResponseModel_ErrorData | null {
   if (response.getStatus() !== ResponseStatus.ERROR) {
     return null;
   }
@@ -204,7 +204,7 @@ export function createStandardSuccessResponse<T = unknown>(payload: T, message?:
  * @param payload Optional payload data
  * @returns A standardized error response
  */
-export function createStandardErrorResponse<T = unknown>(errorData: string | iResponseModel_ErrorData, payload?: T): IStandardResponseBody<T> {
+export function createStandardErrorResponse<T = unknown>(errorData: string | IResponseModel_ErrorData, payload?: T): IStandardResponseBody<T> {
   if (typeof errorData === "string") {
     return {
       success: false,

@@ -1,5 +1,5 @@
-import LoggingTags from "src/enums/logging-tags.enum";
-import logger from "../logging";
+import LoggingTags from "../data/enums/logging-tags.enum";
+import logger from "../shared/logging";
 
 const timestamp = () => new Date().toLocaleString("en-SG", { timeZone: "Asia/Singapore" });
 

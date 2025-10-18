@@ -1,4 +1,4 @@
-import { HealthCheckController } from "@/controllers/healthcheck.controller";
+import { HealthCheckController } from "../class/controllers/healthcheck.controller";
 import { FastifyInstance } from "fastify";
 
 /**
@@ -12,4 +12,6 @@ export default async function healthcheckRoutes(fastify: FastifyInstance): Promi
   fastify.get("/", (request, reply) => healthCheckController.checkHealth(request, reply));
 
   fastify.get("/detailed", (request, reply) => healthCheckController.getDetailedHealth(request, reply));
+
+  fastify.get("/database", (request, reply) => healthCheckController.checkDatabase(request, reply));
 }

@@ -14,11 +14,18 @@
     "test:json": "node -e \"require('fs').mkdirSync('./.temp', { recursive: true })\" && jest --json --outputFile=./.temp/jest-output.json --config jest.config.js",
     "prepare": "husky install",
     "build": "tsc",
-    "typecheck": "tsc --noEmit",
-    "check": "npx eslint --fix \"**/*.{js,jsx,ts,tsx}\" && npx prettier --write \"**/*.{js,jsx,ts,tsx,json,md,yml,yaml}\" && tsc --noEmit && echo \"lint & tsc check passed\"",
-    "start": "ts-node -r tsconfig-paths/register src/index.ts",
-    "dev": "nodemon --exec ts-node -r tsconfig-paths/register src/index.ts",
+    "typecheck": "npx eslint --fix \"**/*.{js,jsx,ts,tsx}\" && npx prettier --write \"**/*.{js,jsx,ts,tsx,json,md,yml,yaml}\" && tsc --noEmit && echo \"lint & tsc check passed\"",
+    "start": "ts-node src/index.ts",
+    "dev": "nodemon --exec ts-node src/index.ts",
     "updates": "ncu -u"
+  },
+  "imports": {
+    "#core/*": "./src/core/*",
+    "#utils/*": "./src/utils/*",
+    "#common/*": "./src/common/*",
+    "#http/*": "./src/http/*",
+    "#routes/*": "./src/routes/*",
+    "#controllers/*": "./src/controllers/*"
   },
   "dependencies": {
     "@fastify/middie": "^9.0.3",
@@ -28,6 +35,7 @@
     "fastify": "^5.3.3",
     "husky": "^9.1.7",
     "node-cron": "^4.0.7",
+    "postgres": "^3.4.7",
     "zod": "^4.1.5"
   },
   "devDependencies": {
