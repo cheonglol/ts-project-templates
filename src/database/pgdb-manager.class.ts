@@ -13,7 +13,7 @@ class PostgresDatabaseManager {
   private readonly connectionString: string;
   private readonly startupRetries = Number(process.env[EnvVarKeys.STARTUP_DB_RETRIES] ?? 5);
   private readonly startupBackoffMs = Number(process.env[EnvVarKeys.STARTUP_DB_BACKOFF_MS] ?? 500);
-  private readonly initTimeoutMs = Number(process.env[EnvVarKeys.INIT_TIMEOUT_MS] ?? 0);
+  private readonly initTimeoutMs = Number(process.env[EnvVarKeys.INIT_DB_TIMEOUT_MS] ?? 0);
 
   constructor() {
     const PSQL_CONNECTION_STRING = process.env[EnvVarKeys.PSQL_CONNECTION_STRING];

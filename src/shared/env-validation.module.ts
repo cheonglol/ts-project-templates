@@ -44,7 +44,7 @@ export const APPLICATION_ENVIRONMENT_VARIABLES: EnvironmentVariable[] = [
   },
   {
     description: "Initialization timeout in ms for database initialize() (0 = disabled)",
-    name: "INIT_TIMEOUT_MS",
+    name: "INIT_DB_TIMEOUT_MS",
   },
   {
     description: "Node environment",
