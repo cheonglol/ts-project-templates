@@ -10,10 +10,6 @@ type EnvironmentVariable = {
 // list of environment variable descriptors
 export const APPLICATION_ENVIRONMENT_VARIABLES: EnvironmentVariable[] = [
   {
-    description: "Secret for webhook signature verification",
-    name: "CUSTOM_WEBHOOK_SECRET",
-  },
-  {
     description: "Ollama API Service URL",
     name: "OLLAMA_SERVICE_URL",
     required: true,
@@ -37,6 +33,14 @@ export const APPLICATION_ENVIRONMENT_VARIABLES: EnvironmentVariable[] = [
   {
     description: "HTTP port for the server",
     name: "HTTP_PORT",
+  },
+  {
+    description: "Number of connection retry attempts for DB startup",
+    name: "STARTUP_DB_RETRIES",
+  },
+  {
+    description: "Base backoff in ms for DB startup retries (exponential)",
+    name: "STARTUP_DB_BACKOFF_MS",
   },
   {
     description: "Node environment",

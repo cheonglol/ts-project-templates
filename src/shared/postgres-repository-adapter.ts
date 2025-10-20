@@ -7,7 +7,7 @@
 
 import postgres from "postgres";
 import { DatabaseConnection } from "../class/base/base-repository.class";
-import DBConnection from "./pgdb-manager.module";
+import DBConnection from "./pgdb-manager.class";
 import logger from "./logging";
 import LoggingTags from "../data/enums/logging-tags.enum";
 

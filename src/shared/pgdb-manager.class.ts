@@ -10,7 +10,11 @@ dotenv.config();
 
 class PostgresDatabaseManager {
   private psql: postgres.Sql<{}> | null = null;
+  private initializing: Promise<void> | null = null;
   private readonly connectionString: string;
+  // Default retry config for startup (use EnvVarKeys to read env)
+  private readonly startupRetries = Number(process.env[EnvVarKeys.STARTUP_DB_RETRIES] ?? 5);
+  private readonly startupBackoffMs = Number(process.env[EnvVarKeys.STARTUP_DB_BACKOFF_MS] ?? 500);
 
   constructor() {
     const PSQL_CONNECTION_STRING = process.env[EnvVarKeys.PSQL_CONNECTION_STRING];
@@ -23,43 +27,106 @@ class PostgresDatabaseManager {
   }
 
   public async initialize(): Promise<void> {
-    try {
-      this.psql = postgres(this.connectionString, {
-        ssl: false,
-        max: 10,
-        // disable preparing statements by name on the server
-        prepare: false,
-      });
-      logger.info("Database connection pool initialized", this.initialize.name, LoggingTags.DATABASE);
-      await this.testConnection();
-      await this.applyMigrations();
-    } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : "Unknown error";
-      logger.error(`Failed to initialize database connection: ${errorMessage}`, this.initialize.name, LoggingTags.DATABASE);
-      throw new Error(`Failed to initialize database connection: ${errorMessage}`);
+    if (this.psql) {
+      logger.debug("Database already initialized", this.initialize.name, LoggingTags.DATABASE);
+      return;
     }
+    if (this.initializing) {
+      logger.debug("Database initialization already in progress, waiting", this.initialize.name, LoggingTags.DATABASE);
+      return this.initializing;
+    }
+    this.initializing = (async () => {
+      try {
+        // Create the pool and run connectivity + migrations with retry/backoff
+        await this.retry(
+          async () => {
+            // create pool
+            if (!this.psql) {
+              this.psql = postgres(this.connectionString, {
+                ssl: false,
+                max: 10,
+                // disable preparing statements by name on the server
+                prepare: false,
+              });
+              logger.info("Database connection pool initialized", this.initialize.name, LoggingTags.DATABASE);
+            }
+
+            // test and migrate
+            await this.testConnection();
+            await this.applyMigrations();
+          },
+          this.startupRetries,
+          this.startupBackoffMs
+        );
+      } catch (error: unknown) {
+        const errorMessage = error instanceof Error ? error.message : "Unknown error";
+        logger.error(`Failed to initialize database connection: ${errorMessage}`, this.initialize.name, LoggingTags.DATABASE);
+        // Ensure we don't keep a partially-initialized client around
+        try {
+          if (this.psql) await this.psql.end();
+        } catch (closeErr) {
+          logger.error(`Error closing partially-initialized pool: ${closeErr instanceof Error ? closeErr.stack : String(closeErr)}`, this.initialize.name, LoggingTags.DATABASE);
+        } finally {
+          this.psql = null;
+        }
+
+        throw new Error(`Failed to initialize database connection: ${errorMessage}`);
+      } finally {
+        // allow future attempts if initialization failed or to re-check state
+        this.initializing = null;
+      }
+    })();
+
+    return this.initializing;
+  }
+
+  /**
+   * Small retry helper with exponential backoff.
+   * Keeps the function flat and readable.
+   */
+  private async retry<T>(fn: () => Promise<T>, attempts: number, baseDelayMs: number): Promise<T> {
+    let lastErr: unknown;
+    for (let i = 0; i < attempts; i++) {
+      try {
+        return await fn();
+      } catch (err) {
+        lastErr = err;
+        const wait = baseDelayMs * Math.pow(2, i);
+        logger.warn(`Operation failed, attempt ${i + 1}/${attempts}. Retrying in ${wait}ms...`, this.retry.name, LoggingTags.DATABASE);
+        // wait
+        await new Promise((res) => setTimeout(res, wait));
+      }
+    }
+    throw lastErr;
   }
 
   public async testConnection(): Promise<void> {
-    if (!this.psql) {
-      throw new Error("Database connection not initialized");
-    }
-
+    if (!this.psql) throw new Error("Database connection not initialized");
     try {
       const result = await this.psql`SELECT 1 AS test;`;
       logger.info("Database connection successful", this.testConnection.name, LoggingTags.DATABASE);
       logger.debug(result, this.testConnection.name, LoggingTags.DATABASE);
     } catch (error) {
       logger.error("Error connecting to the database", this.testConnection.name, LoggingTags.DATABASE);
-      logger.error(error instanceof Error ? error.stack : error, this.testConnection.name, LoggingTags.DATABASE);
-      process.exit(1);
+      logger.error(error instanceof Error ? error.stack : String(error), this.testConnection.name, LoggingTags.DATABASE);
+      // Do not exit the process here; throw and let the caller decide how to handle shutdown.
+      throw error instanceof Error ? error : new Error(String(error));
     }
   }
 
   public async close(): Promise<void> {
-    if (!this.psql) {
-      return;
+    // If initialization is in progress, wait a short time for it to finish.
+    if (this.initializing) {
+      try {
+        // Wait up to 5 seconds for initialization to complete
+        await Promise.race([this.initializing, new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout waiting for initialization to finish")), 5000))]);
+      } catch (err) {
+        // Continue with close attempt even if initialization timed out or failed
+        logger.warn(`Waiting for initialization before close failed: ${err}`, this.close.name, LoggingTags.DATABASE);
+      }
     }
+
+    if (!this.psql) return;
 
     try {
       await this.psql.end();
@@ -91,7 +158,6 @@ class PostgresDatabaseManager {
         .readdirSync(migrationsDir)
         .filter((file) => file.endsWith(".sql"))
         .sort(); // Important: apply in alphabetical order
-
       if (migrationFiles.length === 0) {
         logger.info("No migration files found, skipping migrations", this.applyMigrations.name, LoggingTags.DATABASE);
         return;
@@ -126,19 +192,14 @@ class PostgresDatabaseManager {
         const checksum = crypto.createHash("sha256").update(sql).digest("hex");
 
         await this.psql.begin(async (tx: any) => {
-          // Apply migration
-          await tx.unsafe(sql);
-
-          // Record migration
+          await tx.unsafe(sql); // Apply migration
           await tx`
             INSERT INTO migrations (filename, checksum) 
             VALUES (${filename}, ${checksum})
-          `;
+          `; // Record migration
         });
-
         logger.info(`Applied migration: ${filename}`, this.applyMigrations.name, LoggingTags.DATABASE);
       }
-
       logger.info("All migrations applied successfully", this.applyMigrations.name, LoggingTags.DATABASE);
     } catch (error) {
       logger.error(`Migration error: ${error instanceof Error ? error.stack : String(error)}`, this.applyMigrations.name, LoggingTags.DATABASE);
@@ -146,20 +207,7 @@ class PostgresDatabaseManager {
     }
   }
 
-  private async closeConnection(): Promise<void> {
-    if (!this.psql) {
-      return;
-    }
-
-    try {
-      await this.psql.end();
-      this.psql = null;
-      logger.info("Database connection pool closed", this.closeConnection.name, LoggingTags.DATABASE);
-    } catch (error) {
-      logger.error("Error closing database connection", this.closeConnection.name, LoggingTags.DATABASE);
-      logger.error(error, this.closeConnection.name, LoggingTags.DATABASE);
-    }
-  }
+  // Removed duplicate closeConnection() — use public close() instead.
 
   public static async closeAll(): Promise<void> {
     await DBConnection.close();
@@ -170,6 +218,18 @@ class PostgresDatabaseManager {
       throw new Error("Database connection not initialized. Call initialize() first.");
     }
     return this.psql;
+  }
+
+  /**
+   * Returns true when the connection pool has been initialized and is available.
+   */
+  public isInitialized(): boolean {
+    return this.psql !== null;
+  }
+  public getStatus(): "uninitialized" | "initializing" | "initialized" {
+    if (this.psql) return "initialized";
+    if (this.initializing) return "initializing";
+    return "uninitialized";
   }
 }
 

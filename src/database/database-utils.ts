@@ -4,7 +4,7 @@
  * Common database operations and utilities for the PostgreSQL database
  */
 
-import DBConnection from "../shared/pgdb-manager.module";
+import DBConnection from "../shared/pgdb-manager.class";
 import logger from "../shared/logging";
 import LoggingTags from "../data/enums/logging-tags.enum";
 

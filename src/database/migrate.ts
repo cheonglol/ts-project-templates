@@ -12,7 +12,7 @@
  */
 
 import DatabaseUtils from "./database-utils";
-import DBConnection from "../shared/pgdb-manager.module";
+import DBConnection from "../shared/pgdb-manager.class";
 
 async function runMigrationCommand(): Promise<void> {
   const command = process.argv[2] || "status";
