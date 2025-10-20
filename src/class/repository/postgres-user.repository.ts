@@ -6,7 +6,8 @@
  */
 
 import { BaseRepository } from "../base/base-repository.class";
-import { createPostgresAdapter } from "../../shared/postgres-repository-adapter";
+import { createPostgresAdapter } from "../../database/postgres-repository-adapter";
+import DBConnection from "../../database/pgdb-manager.class";
 
 // User entity interface for PostgreSQL
 export interface User extends Record<string, unknown> {
@@ -49,42 +50,39 @@ export class PostgresUserRepository extends BaseRepository<User> {
    * Find user by email
    */
   async findByEmail(email: string): Promise<User | null> {
-    const sql = this.buildSelectSql() + " AND email = $1";
-    return await this.queryOne<User>(sql, [email]);
+    const knex = DBConnection.getConnection();
+    const row = await knex(this.config.tableName).where({ email }).first();
+    return row ? this.transformResult(row as User) : null;
   }
 
   /**
    * Find users by name pattern
    */
   async findByNamePattern(pattern: string): Promise<User[]> {
-    const sql = this.buildSelectSql() + " AND name ILIKE $1";
-    return await this.query<User>(sql, [`%${pattern}%`]);
+    const knex = DBConnection.getConnection();
+    const rows = await knex(this.config.tableName).whereILike("name", `%${pattern}%`);
+    return this.transformResults(rows as User[]);
   }
 
   /**
    * Find users by status
    */
   async findByStatus(status: string): Promise<User[]> {
-    const sql = this.buildSelectSql() + " AND status = $1";
-    return await this.query<User>(sql, [status]);
+    const knex = DBConnection.getConnection();
+    const rows = await knex(this.config.tableName).where({ status });
+    return this.transformResults(rows as User[]);
   }
 
   /**
    * Get user count by date range
    */
   async getCountByDateRange(startDate: Date, endDate: Date): Promise<number> {
-    let sql = `
-      SELECT COUNT(*) as total 
-      FROM ${this.config.tableName} 
-      WHERE created_at BETWEEN $1 AND $2
-    `;
-
-    if (this.config.softDelete) {
-      sql += " AND deleted_at IS NULL";
-    }
-
-    const result = await this.queryOne<{ total: string }>(sql, [startDate, endDate]);
-    return result ? parseInt(result.total, 10) : 0;
+    const knex = DBConnection.getConnection();
+    const qb = knex(this.config.tableName).count<{ total: string }[]>("* as total").whereBetween("created_at", [startDate, endDate]);
+    if (this.config.softDelete) qb.whereNull("deleted_at");
+    const row = await qb.first();
+    const totalStr = row ? (row.total as unknown as string) : "0";
+    return parseInt(totalStr, 10) || 0;
   }
 
   /**
@@ -92,22 +90,14 @@ export class PostgresUserRepository extends BaseRepository<User> {
    */
   async bulkUpdateStatus(userIds: number[], status: string): Promise<number> {
     if (userIds.length === 0) return 0;
-
-    // Create PostgreSQL-style parameter placeholders
-    const placeholders = userIds.map((_, index) => `$${index + 2}`).join(",");
-
-    let sql = `
-      UPDATE ${this.config.tableName} 
-      SET status = $1, updated_at = NOW()
-      WHERE id IN (${placeholders})
-    `;
-
-    if (this.config.softDelete) {
-      sql += " AND deleted_at IS NULL";
-    }
-
-    const result = await this.connection.execute(sql, [status, ...userIds]);
-    return result.affectedRows;
+    const knex = DBConnection.getConnection();
+    const qb = knex(this.config.tableName).whereIn("id", userIds as number[]);
+    if (this.config.softDelete) qb.whereNull("deleted_at");
+    // Use returning to get affected rows on Postgres
+    const updated = await qb.update({ status, updated_at: knex.fn.now() }).returning("id");
+    if (Array.isArray(updated)) return updated.length;
+    // fallback for drivers returning count
+    return typeof updated === "number" ? updated : 0;
   }
 
   /**
@@ -140,26 +130,24 @@ export class PostgresUserRepository extends BaseRepository<User> {
       params.push(createdAfter);
     }
 
-    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+    // Build query using Knex
+    const knex = DBConnection.getConnection();
+    const base = knex(this.config.tableName).select("*");
+    if (this.config.softDelete) base.whereNull("deleted_at");
+    if (status) base.andWhere("status", status);
+    if (namePattern) base.andWhere("name", "ilike", `%${namePattern}%`);
+    if (createdAfter) base.andWhere("created_at", ">", createdAfter);
 
-    // Get total count
-    const countSql = `SELECT COUNT(*) as total FROM ${this.config.tableName} ${whereClause}`;
-    const countResult = await this.queryOne<{ total: string }>(countSql, params);
-    const total = countResult ? parseInt(countResult.total, 10) : 0;
+    // total
+    const countRow = await base.clone().count<{ total: string }[]>("* as total").first();
+    const total = countRow ? parseInt((countRow.total as unknown as string) || "0", 10) : 0;
 
-    // Get paginated items
+    // items with pagination
     const offset = (page - 1) * limit;
-    const dataSql = `
-      SELECT * FROM ${this.config.tableName} 
-      ${whereClause}
-      ORDER BY created_at DESC
-      LIMIT $${paramIndex++} OFFSET $${paramIndex}
-    `;
-
-    const items = await this.query<User>(dataSql, [...params, limit, offset]);
+    const items = await base.orderBy("created_at", "desc").limit(limit).offset(offset);
 
     return {
-      items: this.transformResults(items),
+      items: this.transformResults(items as User[]),
       total,
     };
   }

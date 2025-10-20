@@ -2,6 +2,8 @@ import { Logger } from "../../shared/logging/logger";
 import { DatabaseError, ValidationError, ErrorCode } from "../common/errors.class";
 import { LoggingTags } from "../../data/enums/logging-tags.enum";
 import { Repository } from "./base-service.class";
+import DBConnection from "../../database/pgdb-manager.class";
+import type { Knex } from "knex";
 
 export interface DatabaseConnection {
   query<T = unknown>(sql: string, params?: unknown[]): Promise<T[]>;
@@ -33,10 +35,32 @@ export abstract class BaseRepository<T extends Record<string, unknown>> implemen
   }
 
   /**
+   * Return Knex instance when DBConnection has been initialized, else null.
+   * This allows tests and legacy paths to continue using the adapter.
+   */
+  protected getKnex(): Knex | null {
+    try {
+      if (DBConnection && DBConnection.isInitialized()) return DBConnection.getConnection();
+    } catch {
+      // DB not initialized in test or adapter-only environments
+    }
+    return null;
+  }
+
+  /**
    * Get all records from the table
    */
   async findAll(): Promise<T[]> {
     try {
+      const knex = this.getKnex();
+      if (knex) {
+        this.logger.debug(`Executing findAll via Knex for table ${this.config.tableName}`, LoggingTags.DATABASE);
+        let qb = knex(this.config.tableName).select("*");
+        if (this.config.softDelete) qb = qb.whereNull("deleted_at");
+        const rows = await qb;
+        return this.transformResults(rows as T[]);
+      }
+
       const sql = this.buildSelectSql();
       this.logger.debug(`Executing findAll query: ${sql}`, LoggingTags.DATABASE);
 
@@ -60,7 +84,18 @@ export abstract class BaseRepository<T extends Record<string, unknown>> implemen
     }
 
     try {
-      // Get total count
+      const knex = this.getKnex();
+      if (knex) {
+        const qb = knex(this.config.tableName).select("*");
+        if (this.config.softDelete) qb.whereNull("deleted_at");
+        const countRow = await qb.clone().count<{ total: string }[]>("* as total").first();
+        const total = countRow ? parseInt((countRow.total as unknown as string) || "0", 10) : 0;
+        const offset = (page - 1) * limit;
+        const rows = await qb.orderBy("created_at", "desc").limit(limit).offset(offset);
+        return { items: this.transformResults(rows as T[]), total };
+      }
+
+      // Fallback to adapter/raw SQL
       const countSql = this.buildCountSql();
       this.logger.debug(`Executing count query: ${countSql}`, LoggingTags.DATABASE);
 
@@ -87,6 +122,12 @@ export abstract class BaseRepository<T extends Record<string, unknown>> implemen
    */
   async findById(id: string | number): Promise<T | null> {
     try {
+      const knex = this.getKnex();
+      if (knex) {
+        const row = await knex(this.config.tableName).where(this.config.primaryKey!, id).first();
+        return row ? this.transformResult(row as T) : null;
+      }
+
       const sql = this.buildSelectSql() + ` WHERE ${this.config.primaryKey} = ?`;
       this.logger.debug(`Executing findById query: ${sql}`, LoggingTags.DATABASE);
 
@@ -104,6 +145,21 @@ export abstract class BaseRepository<T extends Record<string, unknown>> implemen
   async create(data: Partial<T>): Promise<T> {
     try {
       const insertData = this.prepareInsertData(data);
+      const knex = this.getKnex();
+      if (knex) {
+        this.logger.debug(`Creating record via Knex in ${this.config.tableName}`, LoggingTags.DATABASE);
+        const insertRes = await knex(this.config.tableName)
+          .insert(insertData)
+          .returning(this.config.primaryKey as string);
+        const insertedId = Array.isArray(insertRes) ? insertRes[0] : (insertRes as unknown as number | string);
+        if (insertedId) {
+          const created = await this.findById(insertedId as number | string);
+          if (!created) throw new DatabaseError({ message: "Failed to retrieve created record", context: { insertId: insertedId } });
+          return created;
+        }
+      }
+
+      // Fallback to adapter/raw SQL
       const { sql, values } = this.buildInsertSql(insertData);
 
       this.logger.debug(`Executing create query: ${sql}`, LoggingTags.DATABASE);
@@ -135,9 +191,7 @@ export abstract class BaseRepository<T extends Record<string, unknown>> implemen
         return created;
       }
 
-      throw new DatabaseError({
-        message: "Unable to determine primary key for created record",
-      });
+      throw new DatabaseError({ message: "Unable to determine primary key for created record" });
     } catch (error) {
       this.handleDatabaseError(error, "create", data);
       throw error;
@@ -156,6 +210,17 @@ export abstract class BaseRepository<T extends Record<string, unknown>> implemen
       }
 
       const updateData = this.prepareUpdateData(data);
+      const knex = this.getKnex();
+      if (knex) {
+        const res = await knex(this.config.tableName)
+          .where(this.config.primaryKey!, id)
+          .update(updateData)
+          .returning(this.config.primaryKey as string);
+        const affected = Array.isArray(res) ? res.length : typeof res === "number" ? res : 0;
+        if (affected === 0) return null;
+        return await this.findById(id);
+      }
+
       const { sql, values } = this.buildUpdateSql(updateData, id);
 
       this.logger.debug(`Executing update query: ${sql}`, LoggingTags.DATABASE);
@@ -182,6 +247,16 @@ export abstract class BaseRepository<T extends Record<string, unknown>> implemen
       const existing = await this.findById(id);
       if (!existing) {
         return false;
+      }
+
+      const knex = this.getKnex();
+      if (knex) {
+        if (this.config.softDelete) {
+          const res = await knex(this.config.tableName).where(this.config.primaryKey!, id).update({ deleted_at: knex.fn.now() });
+          return (Array.isArray(res) ? res.length : typeof res === "number" ? res : 0) > 0;
+        }
+        const res = await knex(this.config.tableName).where(this.config.primaryKey!, id).del();
+        return (Array.isArray(res) ? res.length : typeof res === "number" ? res : 0) > 0;
       }
 
       let sql: string;

@@ -1,6 +1,6 @@
 import { FastifyRequest, FastifyReply } from "fastify";
 import { BaseController } from "../base/base-controller.class";
-import DBConnection from "../../shared/pgdb-manager.class";
+import DBConnection from "../../database/pgdb-manager.class";
 import logger from "../../shared/logging";
 import LoggingTags from "../../data/enums/logging-tags.enum";
 
@@ -22,7 +22,7 @@ export class HealthCheckController extends BaseController {
 
     try {
       const connection = DBConnection.getConnection();
-      await connection`SELECT 1 AS test`;
+      await connection.raw("SELECT 1 AS test");
       databaseStatus = "UP";
     } catch (error) {
       databaseError = error instanceof Error ? error.message : "Unknown database error";
@@ -57,20 +57,18 @@ export class HealthCheckController extends BaseController {
       const startTime = Date.now();
 
       // Test basic connectivity
-      await connection`SELECT 1 AS test`;
+      await connection.raw("SELECT 1 AS test");
 
       // Test migrations table
-      const migrationCheck = await connection`
-        SELECT COUNT(*) as count FROM migrations
-      `;
-
+      // Use Knex query builder for a stable count result
+      const migrationCountRows = await connection("migrations").count<{ count: string }[]>("* as count");
       const responseTime = Date.now() - startTime;
 
       this.sendSuccess(reply, "Database connectivity check passed", {
         status: "UP",
         responseTime: `${responseTime}ms`,
         migrations: {
-          applied: parseInt(migrationCheck[0].count as string, 10),
+          applied: parseInt(String(migrationCountRows[0].count), 10),
         },
       });
     } catch (error) {

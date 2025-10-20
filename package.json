@@ -17,7 +17,16 @@
     "typecheck": "npx eslint --fix \"**/*.{js,jsx,ts,tsx}\" && npx prettier --write \"**/*.{js,jsx,ts,tsx,json,md,yml,yaml}\" && tsc --noEmit && echo \"lint & tsc check passed\"",
     "start": "ts-node src/index.ts",
     "dev": "nodemon --exec ts-node src/index.ts",
+    "migrate": "node -r ts-node/register ./node_modules/knex/bin/cli.js --knexfile knexfile.ts migrate:latest",
+    "migrate:rollback": "node -r ts-node/register ./node_modules/knex/bin/cli.js --knexfile knexfile.ts migrate:down",
+    "migrate:status": "node -r ts-node/register ./node_modules/knex/bin/cli.js --knexfile knexfile.ts migrate:status",
     "updates": "ncu -u"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "knex": {
+    "knexfile": "knexfile.ts"
   },
   "imports": {
     "#core/*": "./src/core/*",
@@ -34,8 +43,9 @@
     "dotenv": "^16.5.0",
     "fastify": "^5.3.3",
     "husky": "^9.1.7",
+    "knex": "^3.1.0",
     "node-cron": "^4.0.7",
-    "postgres": "^3.4.7",
+    "pg": "^8.16.3",
     "zod": "^4.1.5"
   },
   "devDependencies": {

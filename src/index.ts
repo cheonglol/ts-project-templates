@@ -6,7 +6,7 @@ import LoggingTags from "./data/enums/logging-tags.enum";
 import healthcheckRoutes from "./routes/healthcheck.routes";
 import { EnvVarKeys, verifyEnvironmentSetup } from "./shared/env-validation.module";
 import logger from "./shared/logging/logger";
-import DBConnection from "./shared/pgdb-manager.class";
+import DBConnection from "./database/pgdb-manager.class";
 import setupErrorHandling from "./shared/server-error-handler.module";
 
 // Import your route files directly here
