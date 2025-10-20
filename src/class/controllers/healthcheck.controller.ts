@@ -21,9 +21,12 @@ export class HealthCheckController extends BaseController {
     let databaseError: string | null = null;
 
     try {
-      const connection = DBConnection.getConnection();
-      await connection.raw("SELECT 1 AS test");
-      databaseStatus = "UP";
+      const result = await DBConnection.checkHealth(2000);
+      if (result.ok) {
+        databaseStatus = "UP";
+      } else {
+        databaseError = result.error ?? "unknown";
+      }
     } catch (error) {
       databaseError = error instanceof Error ? error.message : "Unknown database error";
       logger.warn(`Database health check failed: ${databaseError}`, "getDetailedHealth", LoggingTags.DATABASE);
@@ -53,15 +56,13 @@ export class HealthCheckController extends BaseController {
 
   async checkDatabase(_request: FastifyRequest, reply: FastifyReply): Promise<void> {
     try {
-      const connection = DBConnection.getConnection();
       const startTime = Date.now();
-
+      const conn = DBConnection.getConnection();
       // Test basic connectivity
-      await connection.raw("SELECT 1 AS test");
+      await conn.raw("SELECT 1 AS test");
 
       // Test migrations table
-      // Use Knex query builder for a stable count result
-      const migrationCountRows = await connection("migrations").count<{ count: string }[]>("* as count");
+      const migrationCountRows = await conn("migrations").count<{ count: string }[]>("* as count");
       const responseTime = Date.now() - startTime;
 
       this.sendSuccess(reply, "Database connectivity check passed", {

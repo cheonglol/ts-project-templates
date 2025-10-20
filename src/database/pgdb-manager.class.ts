@@ -13,6 +13,7 @@ class PostgresDatabaseManager {
   private readonly connectionString: string;
   private readonly startupRetries = Number(process.env[EnvVarKeys.STARTUP_DB_RETRIES] ?? 5);
   private readonly startupBackoffMs = Number(process.env[EnvVarKeys.STARTUP_DB_BACKOFF_MS] ?? 500);
+  private readonly initTimeoutMs = Number(process.env[EnvVarKeys.INIT_TIMEOUT_MS] ?? 0);
 
   constructor() {
     const PSQL_CONNECTION_STRING = process.env[EnvVarKeys.PSQL_CONNECTION_STRING];
@@ -36,7 +37,7 @@ class PostgresDatabaseManager {
 
     this.initializing = (async () => {
       try {
-        await this.retry(
+        const initPromise = this.retry(
           async () => {
             if (!this.knexInstance) {
               this.knexInstance = knex({
@@ -53,6 +54,15 @@ class PostgresDatabaseManager {
           this.startupRetries,
           this.startupBackoffMs
         );
+
+        if (this.initTimeoutMs > 0) {
+          await Promise.race([
+            initPromise,
+            new Promise((_resolve, reject) => setTimeout(() => reject(new Error(`Database initialization timed out after ${this.initTimeoutMs}ms`)), this.initTimeoutMs)),
+          ]);
+        } else {
+          await initPromise;
+        }
       } catch (error: unknown) {
         const errorMessage = error instanceof Error ? error.message : String(error);
         logger.error(`Failed to initialize database connection: ${errorMessage}`, this.initialize.name, LoggingTags.DATABASE);
@@ -237,6 +247,28 @@ class PostgresDatabaseManager {
   public getConnection(): Knex {
     if (!this.knexInstance) throw new Error("Database connection not initialized. Call initialize() first.");
     return this.knexInstance;
+  }
+
+  /**
+   * Run a lightweight DB health check. Returns { ok, latencyMs?, error? }.
+   * If timeoutMs > 0, will fail if the check doesn't complete in time.
+   */
+  public async checkHealth(timeoutMs = 2000): Promise<{ ok: boolean; latencyMs?: number; error?: string }> {
+    if (!this.knexInstance) return { ok: false, error: "not-initialized" };
+
+    const start = Date.now();
+    try {
+      const rawPromise = this.knexInstance.raw("SELECT 1 AS test;");
+      if (timeoutMs > 0) {
+        await Promise.race([rawPromise, new Promise((_res, rej) => setTimeout(() => rej(new Error("healthcheck timeout")), timeoutMs))]);
+      } else {
+        await rawPromise;
+      }
+
+      return { ok: true, latencyMs: Date.now() - start };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
   }
 
   public isInitialized(): boolean {
