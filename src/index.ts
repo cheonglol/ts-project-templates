@@ -45,7 +45,7 @@ async function startServer(): Promise<void> {
 
   // Start the server
   try {
-    const portRaw = process.env[EnvVarKeys.PORT] ?? process.env[EnvVarKeys.HTTP_PORT] ?? "8080";
+    const portRaw = process.env[EnvVarKeys.HTTP_PORT] ?? "8080";
     const port = parseInt(String(portRaw), 10);
     await server.listen({ port, host: "0.0.0.0" }).then(() => {
       // Register cron jobs here if needed

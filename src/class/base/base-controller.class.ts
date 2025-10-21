@@ -1,7 +1,9 @@
 import { FastifyRequest, FastifyReply } from "fastify";
 import { Logger } from "../../shared/logging/logger";
+import { EnvVarKeys } from "../../shared/env-validation.module";
 import { APP_ERROR_CODE } from "../../data/enums/error-codes.enum";
 import { z } from "zod";
+import * as crypto from "crypto";
 
 /**
  * Base controller class that provides standard response methods
@@ -181,5 +183,81 @@ export abstract class CrudController<T> extends BaseController {
       `Failed to delete ${this.serviceName}`,
       APP_ERROR_CODE.NOT_FOUND
     );
+  }
+}
+
+// Specialized controller for webhooks. Provides helpers for verifying signatures and
+// parsing raw payloads when needed. This follows the pattern of BaseController
+// and allows webhook-specific subclasses to reuse common helper logic.
+export abstract class WebhookController extends BaseController {
+  /**
+   * Verify a request signature using a shared secret from environment.
+   * Subclasses can override or use a specific algorithm.
+   */
+  protected verifySignature(signatureHeader: string | undefined, payload: string): boolean {
+    if (!signatureHeader) return false;
+    const secret = process.env[EnvVarKeys.WEBHOOK_SECRET];
+    if (!secret) return false;
+
+    // Default behavior: HMAC using configurable algorithm and header format 'alg=hex'
+    try {
+      const algorithm = process.env[EnvVarKeys.WEBHOOK_SIGNATURE_ALGORITHM] || "sha256";
+      const [prefix, hash] = signatureHeader.split("=");
+      if (!hash) return false;
+      // If the header includes an algorithm prefix, require it to match the configured algorithm
+      if (prefix && prefix !== algorithm) return false;
+      const hmac = crypto.createHmac(algorithm, secret).update(payload).digest("hex");
+      return crypto.timingSafeEqual(Buffer.from(hmac, "hex"), Buffer.from(hash, "hex"));
+    } catch (err) {
+      this.logger.error(`Webhook signature verification failed: ${String(err)}`, this.constructor.name);
+      return false;
+    }
+  }
+
+  /**
+   * Parse raw request body into JSON. Useful for webhook endpoints that require raw body verification.
+   */
+  protected parseJsonPayload(raw: string): unknown {
+    try {
+      return JSON.parse(raw);
+    } catch (err) {
+      this.logger.error(`Failed to parse webhook payload: ${String(err)}`, this.constructor.name);
+      throw err;
+    }
+  }
+}
+
+// Specialized controller for websockets. Provides helpers for sending messages
+// and handling connection lifecycle events. This allows websocket-specific
+// subclasses to reuse shared logic and follow the project's base controller pattern.
+export abstract class WebsocketController extends BaseController {
+  /** Called when a client connects. Override in subclasses to initialize state. */
+  protected onConnect(clientId: string, _meta?: Record<string, unknown>): void {
+    this.logger.info(`Websocket client connected: ${clientId}`, this.constructor.name);
+  }
+
+  /** Called when a client disconnects. Override in subclasses to cleanup. */
+  protected onDisconnect(clientId: string, reason?: string): void {
+    this.logger.info(`Websocket client disconnected: ${clientId} (${reason || "no reason"})`, this.constructor.name);
+  }
+
+  /** Send a JSON message to a websocket client. Override serializer if needed. */
+  protected sendMessage(sendFn: (data: string) => void, payload: unknown): void {
+    try {
+      const message = JSON.stringify(payload);
+      sendFn(message);
+    } catch (err) {
+      this.logger.error(`Failed to send websocket message: ${String(err)}`, this.constructor.name);
+    }
+  }
+
+  /** Parse text message payload into JSON. */
+  protected parseMessage<T = unknown>(message: string): T {
+    try {
+      return JSON.parse(message) as T;
+    } catch (err) {
+      this.logger.error(`Failed to parse websocket message: ${String(err)}`, this.constructor.name);
+      throw err;
+    }
   }
 }

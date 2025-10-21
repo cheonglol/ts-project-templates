@@ -61,15 +61,41 @@ export class HealthCheckController extends BaseController {
       // Test basic connectivity
       await conn.raw("SELECT 1 AS test");
 
-      // Test migrations table
-      const migrationCountRows = await conn("migrations").count<{ count: string }[]>("* as count");
+      // Test migrations table: prefer Knex's default table 'knex_migrations', fallback to legacy 'migrations'
+      let appliedCount = 0;
+      const extractCount = (rows: unknown): number => {
+        if (!rows) return 0;
+        if (Array.isArray(rows) && rows.length > 0) {
+          const first = rows[0] as unknown;
+          if (typeof first === "object" && first !== null) {
+            const obj = first as Record<string, unknown>;
+            const val = obj.count ?? obj.COUNT ?? obj.total ?? obj.TOTAL;
+            if (typeof val === "number") return val;
+            if (typeof val === "string") return parseInt(val, 10) || 0;
+          }
+        }
+        return 0;
+      };
+
+      try {
+        const rows = await conn("knex_migrations").count("* as count");
+        appliedCount = extractCount(rows);
+      } catch {
+        try {
+          const rows = await conn("migrations").count("* as count");
+          appliedCount = extractCount(rows);
+        } catch {
+          appliedCount = 0;
+        }
+      }
+
       const responseTime = Date.now() - startTime;
 
       this.sendSuccess(reply, "Database connectivity check passed", {
         status: "UP",
         responseTime: `${responseTime}ms`,
         migrations: {
-          applied: parseInt(String(migrationCountRows[0].count), 10),
+          applied: appliedCount,
         },
       });
     } catch (error) {

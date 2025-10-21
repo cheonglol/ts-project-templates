@@ -10,9 +10,12 @@ type EnvironmentVariable = {
 // list of environment variable descriptors
 export const APPLICATION_ENVIRONMENT_VARIABLES: EnvironmentVariable[] = [
   {
+    description: "Node environment",
+    name: "NODE_ENV",
+  },
+  {
     description: "Ollama API Service URL",
     name: "OLLAMA_SERVICE_URL",
-    required: true,
   },
   {
     description: "Optional test override model",
@@ -27,40 +30,75 @@ export const APPLICATION_ENVIRONMENT_VARIABLES: EnvironmentVariable[] = [
     name: "OLLAMA_REQUIRE_STRUCTURED",
   },
   {
-    description: "Port for the server",
-    name: "PORT",
-  },
-  {
-    description: "HTTP port for the server",
+    description: "Port for HTTP server to listen on",
     name: "HTTP_PORT",
   },
   {
-    description: "Number of connection retry attempts for DB startup",
-    name: "STARTUP_DB_RETRIES",
+    description: "Webhook shared secret used to verify incoming webhooks",
+    name: "WEBHOOK_SECRET",
   },
   {
-    description: "Base backoff in ms for DB startup retries (exponential)",
-    name: "STARTUP_DB_BACKOFF_MS",
+    description: "Optional header name to read webhook signature from (defaults to 'x-hub-signature-256')",
+    name: "WEBHOOK_SIGNATURE_HEADER",
   },
   {
-    description: "Initialization timeout in ms for database initialize() (0 = disabled)",
-    name: "INIT_DB_TIMEOUT_MS",
+    description: "HMAC algorithm to use for webhook signature verification (e.g., sha1, sha256)",
+    name: "WEBHOOK_SIGNATURE_ALGORITHM",
+    validator: (val: string) => /^(sha1|sha256|sha384|sha512)$/i.test(val),
+  },
+  // DATABASE SETTINGS
+  {
+    description: "Optional Postgres connection string",
+    name: "PSQL_CONNECTION_STRING",
+    required: true,
   },
   {
-    description: "Node environment",
-    name: "NODE_ENV",
+    description: "Minimum pool size for Postgres client",
+    name: "PSQL_POOL_MIN",
+  },
+  {
+    description: "Maximum pool size for Postgres client",
+    name: "PSQL_POOL_MAX",
+  },
+  {
+    description: "Number of connection retry attempts for Postgres startup",
+    name: "PSQL_STARTUP_RETRIES",
+  },
+  {
+    description: "Base backoff in ms for Postgres startup retries (exponential)",
+    name: "PSQL_STARTUP_BACKOFF_MS",
+  },
+  {
+    description: "Initialization timeout in ms for Postgres initialize() (0 = disabled)",
+    name: "PSQL_INIT_TIMEOUT_MS",
+  },
+  {
+    description: "Enable TLS/SSL for Postgres connections (set to 'true' to enable)",
+    name: "PSQL_SSL",
+  },
+  {
+    description: "When TLS is enabled, whether to reject unauthorized certificates (true/false)",
+    name: "PSQL_SSL_REJECT_UNAUTHORIZED",
+  },
+  {
+    description: "Optional path to CA certificate file to trust for TLS connections",
+    name: "PSQL_SSL_CA",
+  },
+  {
+    description: "Timeout in ms to wait for knex.destroy() during shutdown",
+    name: "PSQL_CLOSE_TIMEOUT_MS",
   },
 ];
 
 // string literal union of environment variable keys
-export const ENV_VAR_KEYS = APPLICATION_ENVIRONMENT_VARIABLES.map((v) => v.name);
+export const CONFIGURABLE_ENV_VAR_NAMES = APPLICATION_ENVIRONMENT_VARIABLES.map((v) => v.name);
 export type EnvironmentVariableKey = string;
 
 // read-only mapping { KEY: KEY }
 export const EnvVarKeys: Readonly<Record<string, string>> = APPLICATION_ENVIRONMENT_VARIABLES.reduce(
-  (acc, cur) => {
-    acc[cur.name] = cur.name;
-    return acc;
+  (accumulatedEnvVars, environmentVariable) => {
+    accumulatedEnvVars[environmentVariable.name] = environmentVariable.name;
+    return accumulatedEnvVars;
   },
   {} as Record<string, string>
 );

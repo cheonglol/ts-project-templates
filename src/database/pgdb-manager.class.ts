@@ -10,10 +10,11 @@ dotenv.config();
 class PostgresDatabaseManager {
   private knexInstance: Knex | null = null;
   private initializing: Promise<void> | null = null;
-  private readonly connectionString: string;
-  private readonly startupRetries = Number(process.env[EnvVarKeys.STARTUP_DB_RETRIES] ?? 5);
-  private readonly startupBackoffMs = Number(process.env[EnvVarKeys.STARTUP_DB_BACKOFF_MS] ?? 500);
-  private readonly initTimeoutMs = Number(process.env[EnvVarKeys.INIT_DB_TIMEOUT_MS] ?? 0);
+  private connectionString: string;
+  // Use env var names defined in shared/env-validation.module.ts
+  private readonly startupRetries = Number(process.env[EnvVarKeys.PSQL_STARTUP_RETRIES] ?? 5);
+  private readonly startupBackoffMs = Number(process.env[EnvVarKeys.PSQL_STARTUP_BACKOFF_MS] ?? 500);
+  private readonly initTimeoutMs = Number(process.env[EnvVarKeys.PSQL_INIT_TIMEOUT_MS] ?? 0);
 
   constructor() {
     const PSQL_CONNECTION_STRING = process.env[EnvVarKeys.PSQL_CONNECTION_STRING];
@@ -25,25 +26,74 @@ class PostgresDatabaseManager {
     this.connectionString = PSQL_CONNECTION_STRING;
   }
 
-  public async initialize(): Promise<void> {
-    if (this.knexInstance) {
-      logger.debug("Database already initialized", this.initialize.name, LoggingTags.DATABASE);
-      return;
+  /**
+   * Mask password in a Postgres connection string for safe logging.
+   * e.g. postgres://user:secret@host/db -> postgres://user:****@host/db
+   */
+  private maskConnectionString(conn: string): string {
+    try {
+      // rough parse for postgres://user:pass@host[:port]/db
+      return conn.replace(/(:\/\/[^:/]+:)([^@]+)(@)/, (_m, p1, _p2, p3) => `${p1}****${p3}`);
+    } catch {
+      return "[masked]";
     }
+  }
+
+  public async initialize(): Promise<void> {
+    // If an initialization is already in progress, wait for it first. This avoids a race where
+    // `knexInstance` was created but migrations or other init steps are still running.
     if (this.initializing) {
       logger.debug("Database initialization already in progress, waiting", this.initialize.name, LoggingTags.DATABASE);
       return this.initializing;
     }
+    if (this.knexInstance) return logger.debug("Database already initialized", this.initialize.name, LoggingTags.DATABASE);
 
     this.initializing = (async () => {
       try {
         const initPromise = this.retry(
           async () => {
+            // Build SSL options if requested
+            let sslOption: Record<string, unknown> | undefined;
+            try {
+              const psqlSsl = process.env[EnvVarKeys.PSQL_SSL];
+              if (psqlSsl && String(psqlSsl).toLowerCase() === "true") {
+                const rejectUnauthorizedRaw = process.env[EnvVarKeys.PSQL_SSL_REJECT_UNAUTHORIZED];
+                const caPath = process.env[EnvVarKeys.PSQL_SSL_CA];
+
+                const rejectUnauthorized = rejectUnauthorizedRaw === undefined ? true : String(rejectUnauthorizedRaw).toLowerCase() !== "false";
+                sslOption = { rejectUnauthorized } as Record<string, unknown>;
+
+                if (caPath) {
+                  try {
+                    // read synchronously during init (small file expected)
+                    const fs = await import("fs");
+                    const ca = fs.readFileSync(String(caPath), "utf8");
+                    sslOption.ca = ca;
+                  } catch (caErr) {
+                    const msg = `Failed to read PSQL_SSL_CA file at ${caPath}: ${caErr instanceof Error ? caErr.message : String(caErr)}`;
+                    logger.error(msg, this.initialize.name, LoggingTags.DATABASE);
+                    throw new Error(msg);
+                  }
+                }
+              }
+            } catch (sslErr) {
+              // Bubble up SSL parsing errors to fail initialization clearly
+              const msg = `Invalid PSQL SSL configuration: ${sslErr instanceof Error ? sslErr.message : String(sslErr)}`;
+              logger.error(msg, this.initialize.name, LoggingTags.DATABASE);
+              throw new Error(msg);
+            }
             if (!this.knexInstance) {
+              // If sslOption is present we need to pass a connection object; otherwise the connection string is fine.
+              const connectionConfig = sslOption ? { connectionString: this.connectionString, ssl: sslOption } : this.connectionString;
+
+              // Allow pool tuning via env vars (PSQL_POOL_MIN / PSQL_POOL_MAX), falling back to safe defaults.
+              const poolMin = Number(process.env[EnvVarKeys.PSQL_POOL_MIN] ?? 2);
+              const poolMax = Number(process.env[EnvVarKeys.PSQL_POOL_MAX] ?? 10);
+
               this.knexInstance = knex({
                 client: "pg",
-                connection: this.connectionString,
-                pool: { min: 2, max: 10 },
+                connection: connectionConfig as unknown as string | Record<string, unknown>,
+                pool: { min: poolMin, max: poolMax },
               });
               logger.info("Knex DB client initialized", this.initialize.name, LoggingTags.DATABASE);
             }
@@ -65,7 +115,8 @@ class PostgresDatabaseManager {
         }
       } catch (error: unknown) {
         const errorMessage = error instanceof Error ? error.message : String(error);
-        logger.error(`Failed to initialize database connection: ${errorMessage}`, this.initialize.name, LoggingTags.DATABASE);
+        const maskedConn = this.maskConnectionString(this.connectionString);
+        logger.error(`Failed to initialize database connection (connection=${maskedConn}): ${errorMessage}`, this.initialize.name, LoggingTags.DATABASE);
         try {
           if (this.knexInstance) await this.knexInstance.destroy();
         } catch (closeErr) {
@@ -119,7 +170,8 @@ class PostgresDatabaseManager {
   public async close(): Promise<void> {
     if (this.initializing) {
       try {
-        await Promise.race([this.initializing, new Promise((_resolve, reject) => setTimeout(() => reject(new Error("Timeout waiting for initialization to finish")), 5000))]);
+        const waitMs = Number(process.env[EnvVarKeys.PSQL_CLOSE_TIMEOUT_MS] ?? 5000);
+        await Promise.race([this.initializing, new Promise((_resolve, reject) => setTimeout(() => reject(new Error("Timeout waiting for initialization to finish")), waitMs))]);
       } catch (err) {
         logger.warn(`Waiting for initialization before close failed: ${err}`, this.close.name, LoggingTags.DATABASE);
       }
@@ -128,13 +180,41 @@ class PostgresDatabaseManager {
     if (!this.knexInstance) return;
 
     try {
-      await this.knexInstance.destroy();
+      const destroyPromise = this.knexInstance.destroy();
+      const closeTimeoutMs = Number(process.env[EnvVarKeys.PSQL_CLOSE_TIMEOUT_MS] ?? 5000);
+      await Promise.race([destroyPromise, new Promise((_res, rej) => setTimeout(() => rej(new Error("Timeout during knex.destroy()")), closeTimeoutMs))]);
       this.knexInstance = null;
       logger.info("Database client destroyed", this.close.name, LoggingTags.DATABASE);
     } catch (error) {
       logger.error("Error destroying database client", this.close.name, LoggingTags.DATABASE);
       logger.error(error, this.close.name, LoggingTags.DATABASE);
     }
+  }
+
+  /**
+   * Refresh the Knex connection pool. Optionally provide a new connection string.
+   * This is useful when credentials rotate or the connection string changes.
+   */
+  public async refreshConnection(newConnectionString?: string): Promise<void> {
+    // If a new connection string is provided, update it
+    if (newConnectionString) this.connectionString = newConnectionString;
+
+    // If initialization already in progress, wait for it to finish
+    if (this.initializing) await this.initializing;
+
+    // Destroy existing instance if present
+    if (this.knexInstance) {
+      try {
+        await this.knexInstance.destroy();
+      } catch (err) {
+        logger.warn(`Error destroying existing knex instance during refresh: ${err}`, this.refreshConnection.name, LoggingTags.DATABASE);
+      } finally {
+        this.knexInstance = null;
+      }
+    }
+
+    // Re-run initialize to recreate pool and re-run migrations if needed
+    await this.initialize();
   }
 
   private async applyMigrations(): Promise<void> {
@@ -145,82 +225,19 @@ class PostgresDatabaseManager {
       const fs = await import("fs");
       const crypto = await import("crypto");
 
-      const migrationsDir = path.resolve(__dirname, "../database/migrations");
-
-      if (!fs.existsSync(migrationsDir)) {
-        logger.info("SQL migrations directory not found, skipping migrations", this.applyMigrations.name, LoggingTags.DATABASE);
-        return;
-      }
-
-      const files = fs
-        .readdirSync(migrationsDir)
-        .filter((f) => f.endsWith(".sql"))
-        .sort();
-      if (files.length === 0) {
-        logger.info("No SQL migration files found, skipping", this.applyMigrations.name, LoggingTags.DATABASE);
-        return;
-      }
-
-      logger.info(`Found ${files.length} SQL migration files`, this.applyMigrations.name, LoggingTags.DATABASE);
-
-      const knex = this.knexInstance;
-
-      // Acquire advisory lock to avoid concurrent migration runs. Use a stable bigint key.
-      // We'll use a single 64-bit key by passing two 32-bit ints: high and low. Pick constants.
-      const LOCK_KEY_HIGH = 0x0f0f0f0f;
-      const LOCK_KEY_LOW = 0x00f00f00;
-
-      // pg returns rows in .rows for node-postgres. knex.raw() shape varies, so normalize.
-      const tryLockRes = await knex.raw("SELECT pg_try_advisory_lock(?, ?) as locked", [LOCK_KEY_HIGH, LOCK_KEY_LOW]);
-      const locked = tryLockRes && (tryLockRes.rows?.[0]?.locked ?? tryLockRes[0]?.locked ?? false);
-      if (!locked) {
-        logger.info("Another migration runner holds the advisory lock; skipping migrations", this.applyMigrations.name, LoggingTags.DATABASE);
-        return;
-      }
-
-      try {
-        // Ensure migrations table exists (idempotent)
-        await knex.raw(`
-          CREATE TABLE IF NOT EXISTS migrations (
-            filename text PRIMARY KEY,
-            checksum text NOT NULL,
-            applied_at timestamptz DEFAULT now()
-          );
-        `);
-
-        // Load applied migrations
-        const appliedRowsRaw = await knex("migrations").select("filename", "checksum");
-        const appliedMap = new Map<string, string>();
-        for (const r of appliedRowsRaw) appliedMap.set(r.filename, r.checksum);
-
-        for (const filename of files) {
-          if (appliedMap.has(filename)) {
-            logger.debug(`Migration already applied: ${filename}`, this.applyMigrations.name, LoggingTags.DATABASE);
-            continue;
-          }
-
-          const fullpath = path.join(migrationsDir, filename);
-          const sql = fs.readFileSync(fullpath, { encoding: "utf8" });
-          const checksum = crypto.createHash("sha256").update(sql).digest("hex");
-
-          // Apply migration in a transaction so recording is atomic with execution when possible
-          await knex.transaction(async (trx) => {
-            // Execute SQL. Some SQL files may contain multiple statements.
-            await trx.raw(sql);
-            await trx("migrations").insert({ filename, checksum });
-          });
-
-          logger.info(`Applied SQL migration: ${filename}`, this.applyMigrations.name, LoggingTags.DATABASE);
-        }
-
-        logger.info("SQL migrations applied successfully", this.applyMigrations.name, LoggingTags.DATABASE);
-      } finally {
-        // Release advisory lock
+      // Prefer Knex migrations. If a knex_migrations directory exists, run knex.migrate.latest()
+      const knexMigrationsDir = path.resolve(__dirname, "../database/knex_migrations");
+      if (fs.existsSync(knexMigrationsDir) && typeof (this.knexInstance as any).migrate?.latest === "function") {
+        logger.info("Found knex_migrations directory; running knex.migrate.latest()", this.applyMigrations.name, LoggingTags.DATABASE);
         try {
-          await knex.raw("SELECT pg_advisory_unlock(?, ?)", [LOCK_KEY_HIGH, LOCK_KEY_LOW]);
-        } catch (unlockErr) {
-          logger.warn(`Failed to release advisory lock: ${unlockErr}`, this.applyMigrations.name, LoggingTags.DATABASE);
+          await (this.knexInstance as any).migrate.latest({ directory: knexMigrationsDir });
+          logger.info("Knex migrations applied successfully", this.applyMigrations.name, LoggingTags.DATABASE);
+        } catch (migrErr) {
+          logger.error(`Knex migration error: ${migrErr instanceof Error ? migrErr.stack : String(migrErr)}`, this.applyMigrations.name, LoggingTags.DATABASE);
+          throw migrErr;
         }
+      } else {
+        logger.info("No knex_migrations directory found; skipping migrations", this.applyMigrations.name, LoggingTags.DATABASE);
       }
     } catch (error) {
       logger.error(`Migration error: ${error instanceof Error ? error.stack : String(error)}`, this.applyMigrations.name, LoggingTags.DATABASE);
@@ -247,6 +264,24 @@ class PostgresDatabaseManager {
   public getConnection(): Knex {
     if (!this.knexInstance) throw new Error("Database connection not initialized. Call initialize() first.");
     return this.knexInstance;
+  }
+
+  /**
+   * Return a ready Knex instance, waiting for an in-progress initialization if necessary.
+   * If initialization does not complete within `timeoutMs`, rejects with an error.
+   */
+  public async getOrWaitConnection(timeoutMs = 5000): Promise<Knex> {
+    if (this.knexInstance) return this.knexInstance;
+
+    if (this.initializing) {
+      // Wait for initialization to complete or timeout
+      await Promise.race([this.initializing, new Promise((_res, rej) => setTimeout(() => rej(new Error(`Timed out waiting ${timeoutMs}ms for DB initialization`)), timeoutMs))]);
+
+      if (this.knexInstance) return this.knexInstance;
+      throw new Error("Database initialization completed but client is not available");
+    }
+
+    throw new Error("Database not initialized. Call initialize() first.");
   }
 
   /**

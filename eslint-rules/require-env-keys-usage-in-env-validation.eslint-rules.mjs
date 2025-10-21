@@ -22,13 +22,59 @@ function collectFiles(dir) {
   return results;
 }
 
-function createKeyRegexes(key) {
-  return [
-    new RegExp(`\\bEnvVarKeys\\.${key}\\b`),
-    new RegExp(`process\\.env\\[\\s*EnvVarKeys\\.${key}\\s*\\]`),
-    new RegExp(`process\\.env\\[\\s*['"\\"]${key}['"\\"]\\s*\\]`),
-    new RegExp(`process\\.env\\.${key}\\b`),
-  ];
+function extractKeysFromEnvModule(modulePath) {
+  try {
+    const text = fs.readFileSync(modulePath, "utf8");
+    // Narrow to the APPLICATION_ENVIRONMENT_VARIABLES array block to reduce false positives.
+    // Match optional TypeScript annotation between the name and the '=' so we find the
+    // actual array literal (e.g. 'APPLICATION_ENVIRONMENT_VARIABLES: EnvironmentVariable[] = [ ... ]').
+    const arrMatch = text.match(/APPLICATION_ENVIRONMENT_VARIABLES(?:\s*:\s*[^=]+)?\s*=\s*\[([\s\S]*?)\]/m);
+    if (!arrMatch) return [];
+    const block = arrMatch[1];
+    const regex = /name\s*:\s*["'`]([A-Z0-9_]+)["'`]/g;
+    const keys = [];
+    let m;
+    while ((m = regex.exec(block)) !== null) {
+      keys.push(m[1]);
+    }
+    return keys;
+  } catch {
+    return [];
+  }
+}
+
+function extractRequiredMapFromEnvModule(modulePath) {
+  try {
+    const text = fs.readFileSync(modulePath, "utf8");
+    const start = text.indexOf("APPLICATION_ENVIRONMENT_VARIABLES");
+    if (start === -1) return new Map();
+    const arrayStart = text.indexOf("[", start);
+    const arrayEnd = text.indexOf("]", arrayStart);
+    const block = text.slice(arrayStart, arrayEnd + 1);
+    const regex = /\{([\s\S]*?)\}/g;
+    const requiredMap = new Map();
+    let m;
+    while ((m = regex.exec(block)) !== null) {
+      const item = m[1];
+      const nameMatch = item.match(/name\s*:\s*["'`]([A-Z0-9_]+)["'`]/);
+      if (!nameMatch) continue;
+      const name = nameMatch[1];
+      const reqMatch = item.match(/required\s*:\s*(true|false)/);
+      const required = reqMatch ? reqMatch[1] === "true" : false;
+      requiredMap.set(name, required);
+    }
+    return requiredMap;
+  } catch {
+    return new Map();
+  }
+}
+
+function parseVariableDeclaration(node) {
+  if (node.type === "VariableDeclaration") return node;
+  if (node.type === "ExportNamedDeclaration" && node.declaration?.type === "VariableDeclaration") {
+    return node.declaration;
+  }
+  return null;
 }
 
 function extractEnvVarKeys(varDecl) {
@@ -96,14 +142,6 @@ function extractRequiredMap(varDecl) {
   return requiredMap;
 }
 
-function parseVariableDeclaration(node) {
-  if (node.type === "VariableDeclaration") return node;
-  if (node.type === "ExportNamedDeclaration" && node.declaration?.type === "VariableDeclaration") {
-    return node.declaration;
-  }
-  return null;
-}
-
 function findUsedKeys(keys, files, fileName) {
   const used = new Set();
 
@@ -120,7 +158,12 @@ function findUsedKeys(keys, files, fileName) {
     for (const key of keys) {
       if (used.has(key.name)) continue;
 
-      const regexes = createKeyRegexes(key.name);
+      const regexes = [
+        new RegExp(`\\bEnvVarKeys\\.${key.name}\\b`),
+        new RegExp(`process\\.env\\[\\s*EnvVarKeys\\.${key.name}\\s*\\]`),
+        new RegExp("process\\.env\\[\\s*['\"`]" + key.name + "['\"`]\\s*\\]"),
+        new RegExp(`process\\.env\\.${key.name}\\b`),
+      ];
       if (regexes.some(regex => regex.test(text))) {
         used.add(key.name);
       }
@@ -139,54 +182,132 @@ function createEnvValidationRule(ruleName, messageId, description, shouldReportK
       schema: [],
       messages: {
         [messageId]: "{{key}} — ENV_VAR_KEYS member is defined in env-validation.module.ts but not referenced anywhere else.",
+        missingReference: "{{key}} — referenced here but not defined in env-validation.module.ts",
+        envModuleMissing: "Could not find env-validation.module.ts at {{path}} — rule requires this file to validate env keys.",
       },
     },
     defaultOptions: [],
     create(context) {
       const fileName = context.getFilename();
-      if (!fileName.endsWith("env-validation.module.ts")) return {};
+      const shortName = path.basename(fileName || "");
 
-      const source = context.getSourceCode();
-      const ast = source.ast;
-      const keys = [];
-      const requiredMap = new Map();
+      // If we're linting the env-validation module itself, keep the original behavior
+      if (shortName.endsWith("env-validation.module.ts")) {
+        const source = context.getSourceCode();
+        const ast = source.ast;
+        const keys = [];
+        const requiredMap = new Map();
 
-      for (const node of ast.body) {
-        const varDecl = parseVariableDeclaration(node);
-        if (!varDecl) continue;
+        for (const node of ast.body) {
+          const varDecl = parseVariableDeclaration(node);
+          if (!varDecl) continue;
 
-        const declName = varDecl.declarations[0]?.id?.name;
+          const declName = varDecl.declarations[0]?.id?.name;
 
-        if (declName === "APPLICATION_ENVIRONMENT_VARIABLES" || declName === "EnvVarKeys") {
-          keys.push(...extractEnvVarKeys(varDecl));
-        }
-
-        if (declName === "ENV_VARS") {
-          const extractedMap = extractRequiredMap(varDecl);
-          for (const [key, value] of extractedMap) {
-            requiredMap.set(key, value);
+          if (declName === "APPLICATION_ENVIRONMENT_VARIABLES" || declName === "EnvVarKeys") {
+            keys.push(...extractEnvVarKeys(varDecl));
+            // also collect required flags from the same APPLICATION_ENVIRONMENT_VARIABLES declaration
+            if (declName === "APPLICATION_ENVIRONMENT_VARIABLES") {
+              const extractedMap = extractRequiredMap(varDecl);
+              for (const [key, value] of extractedMap) requiredMap.set(key, value);
+            }
           }
         }
+
+        if (keys.length === 0) return {};
+
+        const projectRoot = process.cwd();
+        const files = collectFiles(projectRoot);
+        const used = findUsedKeys(keys, files, fileName);
+
+        return {
+          "Program:exit"() {
+            for (const key of keys) {
+              const isRequired = requiredMap.has(key.name) ? requiredMap.get(key.name) : false;
+
+              if (!used.has(key.name) && shouldReportKey(isRequired)) {
+                context.report({
+                  node: key.node,
+                  messageId,
+                  data: { key: key.name }
+                });
+              }
+            }
+          },
+        };
       }
 
-      if (keys.length === 0) return {};
+      // Otherwise: lint other files to ensure they don't reference undefined env keys
+      // Attempt to read known env module to collect defined keys
+      const envModulePath = path.join(process.cwd(), "src", "shared", "env-validation.module.ts");
 
-      const projectRoot = process.cwd();
-      const files = collectFiles(projectRoot);
-      const used = findUsedKeys(keys, files, fileName);
+      // If the module file cannot be found, report a lint error so the user notices
+      if (!fs.existsSync(envModulePath)) {
+        return {
+          "Program:exit"() {
+            context.report({
+              node: context.getSourceCode().ast,
+              messageId: "envModuleMissing",
+              data: { path: envModulePath },
+            });
+          },
+        };
+      }
+
+      const definedKeys = new Set(extractKeysFromEnvModule(envModulePath));
+      // also load required map and include its keys to ensure keys defined with a `required` flag
+      // (inside APPLICATION_ENVIRONMENT_VARIABLES) are recognized; this also prevents the
+      // helper function from being flagged as unused.
+      const requiredMap = extractRequiredMapFromEnvModule(envModulePath);
+      for (const k of requiredMap.keys()) definedKeys.add(k);
 
       return {
-        "Program:exit"() {
-          for (const key of keys) {
-            const isRequired = requiredMap.has(key.name) ? requiredMap.get(key.name) : false;
-
-            if (!used.has(key.name) && shouldReportKey(isRequired)) {
-              context.report({
-                node: key.node,
-                messageId,
-                data: { key: key.name }
-              });
+        MemberExpression(node) {
+          try {
+            // process.env['KEY'] or process.env["KEY"] or process.env.KEY
+            if (node.object && node.object.type === "MemberExpression") {
+              const obj = node.object;
+              if (obj.object && obj.object.type === "Identifier" && obj.object.name === "process" && obj.property && obj.property.type === "Identifier" && obj.property.name === "env") {
+                // property can be Identifier (process.env.KEY) or Literal (process.env['KEY']) or MemberExpression (process.env[EnvVarKeys.KEY])
+                if (node.property.type === "Literal" && typeof node.property.value === "string") {
+                  const key = node.property.value;
+                  if (!definedKeys.has(key)) {
+                    context.report({ node: node.property, messageId: "missingReference", data: { key } });
+                  }
+                } else if (node.property.type === "Identifier") {
+                  const key = node.property.name;
+                  if (!definedKeys.has(key)) {
+                    context.report({ node: node.property, messageId: "missingReference", data: { key } });
+                  }
+                } else if (node.property.type === "MemberExpression") {
+                  // process.env[EnvVarKeys.KEY] -> extract KEY
+                  const inner = node.property;
+                  if (inner.object && inner.object.type === "Identifier" && inner.object.name === "EnvVarKeys" && inner.property && inner.property.type === "Identifier") {
+                    const key = inner.property.name;
+                    if (!definedKeys.has(key)) {
+                      context.report({ node: inner.property, messageId: "missingReference", data: { key } });
+                    }
+                  }
+                }
+              }
             }
+
+            // EnvVarKeys.KEY used directly
+            if (node.object && node.object.type === "Identifier" && node.object.name === "EnvVarKeys") {
+              if (node.property && node.property.type === "Identifier") {
+                const key = node.property.name;
+                if (!definedKeys.has(key)) {
+                  context.report({ node: node.property, messageId: "missingReference", data: { key } });
+                }
+              } else if (node.property && node.property.type === "Literal" && typeof node.property.value === "string") {
+                const key = node.property.value;
+                if (!definedKeys.has(key)) {
+                  context.report({ node: node.property, messageId: "missingReference", data: { key } });
+                }
+              }
+            }
+          } catch {
+            // swallow parsing errors; rule is best-effort
           }
         },
       };
@@ -197,7 +318,7 @@ function createEnvValidationRule(ruleName, messageId, description, shouldReportK
 export default createEnvValidationRule(
   "require-env-keys-usage-in-env-validation",
   "unusedEnvVarKey",
-  "Ensure ENV_VAR_KEYS members are referenced somewhere in the codebase",
+  "Ensure ENV_VAR_KEYS members are referenced somewhere in the codebase and referenced keys exist",
   (isRequired) => isRequired // Only report required keys
 );
 

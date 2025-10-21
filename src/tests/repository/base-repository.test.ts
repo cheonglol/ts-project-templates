@@ -1,6 +1,6 @@
 import { BaseRepository, DatabaseConnection, RepositoryConfig } from "../../class/base/base-repository.class";
-import { ValidationError, DatabaseError } from "../../class/common/errors.class";
-import { setupTestEnvironment, teardownTestEnvironment, resetLogger } from "../test-helper";
+import { ValidationError } from "../../class/common/errors.class";
+import { resetLogger, setupTestEnvironment, teardownTestEnvironment } from "../test-helper";
 
 // Mock entity for testing
 interface TestEntity extends Record<string, unknown> {

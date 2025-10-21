@@ -1,8 +1,8 @@
-import { IOllamaGenerateOptions, IOllamaGenerateResponse, IOllamaChatRequest, IOllamaEmbedRequest } from "../../data/interfaces/ollama.interface";
-import path from "path";
 import dotenv from "dotenv";
 import http from "http";
 import https from "https";
+import path from "path";
+import { IOllamaChatRequest, IOllamaEmbedRequest, IOllamaGenerateOptions, IOllamaGenerateResponse } from "../../data/interfaces/ollama.interface";
 import { EnvVarKeys } from "../../shared/env-validation.module";
 
 // Load environment from repo root .env so tests pick up OLLAMA_SERVICE_URL automatically
